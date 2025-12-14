@@ -1,0 +1,18 @@
+[package]
+name = "greentic-config-types"
+version.workspace=true
+edition.workspace=true
+license.workspace=true
+description = "Schema-only types for Greentic host configuration (no IO)"
+repository = "https://github.com/greentic/greentic-config"
+readme = "README.md"
+
+[dependencies]
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+toml = { workspace = true }
+greentic-types = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+toml = { workspace = true }

@@ -1,0 +1,32 @@
+[package]
+name = "greentic-config"
+version.workspace=true
+edition.workspace=true
+license.workspace=true
+description = "Enterprise-grade configuration loader for Greentic hosts"
+repository = "https://github.com/greentic/greentic-config"
+readme = "README.md"
+
+[features]
+cli = ["clap"]
+
+[dependencies]
+anyhow = { workspace = true }
+camino = { workspace = true }
+directories = { workspace = true }
+greentic-config-types = { path = "../greentic-config-types" }
+greentic-types = { workspace = true }
+once_cell = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+serde_json = { workspace = true }
+serde_with = { workspace = true }
+thiserror = { workspace = true }
+toml = { workspace = true }
+clap = { version = "4.5", features = ["derive"], optional = true }
+
+[dev-dependencies]
+tempfile = "3.10"
+[[bin]]
+name = "greentic-config"
+path = "src/bin/greentic-config.rs"
+required-features = ["cli"]

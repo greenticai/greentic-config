@@ -1,0 +1,208 @@
+mod explain;
+mod loaders;
+mod merge;
+mod paths;
+mod validate;
+
+use greentic_config_types::{ConfigSource, GreenticConfig, ProvenancePath};
+use std::collections::HashMap;
+use std::path::PathBuf;
+
+pub use explain::{ExplainReport, explain};
+pub use loaders::{ConfigFileFormat, ConfigLayer};
+pub use paths::{DefaultPaths, discover_project_root};
+pub use validate::{ValidationError, validate_config};
+
+pub type ProvenanceMap = HashMap<ProvenancePath, ConfigSource>;
+
+#[derive(Debug, Clone)]
+pub struct ResolvedConfig {
+    pub config: GreenticConfig,
+    pub provenance: ProvenanceMap,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ConfigResolver {
+    project_root: Option<PathBuf>,
+    cli_overrides: Option<ConfigLayer>,
+    allow_dev: bool,
+}
+
+impl ConfigResolver {
+    pub fn new() -> Self {
+        Self {
+            project_root: None,
+            cli_overrides: None,
+            allow_dev: false,
+        }
+    }
+
+    pub fn with_project_root(mut self, root: PathBuf) -> Self {
+        self.project_root = Some(root);
+        self
+    }
+
+    pub fn with_project_root_opt(mut self, root: Option<PathBuf>) -> Self {
+        if let Some(r) = root {
+            self.project_root = Some(r);
+        }
+        self
+    }
+
+    pub fn with_cli_overrides(mut self, layer: ConfigLayer) -> Self {
+        self.cli_overrides = Some(layer);
+        self
+    }
+
+    pub fn allow_dev(mut self, allow: bool) -> Self {
+        self.allow_dev = allow;
+        self
+    }
+
+    pub fn load(&self) -> anyhow::Result<ResolvedConfig> {
+        let cwd = std::env::current_dir()?;
+        let project_root = self
+            .project_root
+            .clone()
+            .or_else(|| discover_project_root(&cwd))
+            .unwrap_or(cwd);
+
+        let default_paths = DefaultPaths::from_root(&project_root);
+        let mut provenance = ProvenanceMap::new();
+
+        let default_layer = loaders::default_layer(&project_root, &default_paths);
+        let user_layer = loaders::load_user_config()?;
+        let project_layer = loaders::load_project_config(&project_root)?;
+        let env_layer = loaders::load_env_layer();
+
+        let mut merged = merge::MergeState::new(default_layer, ConfigSource::Default);
+        merged.apply(user_layer, ConfigSource::User);
+        merged.apply(project_layer, ConfigSource::Project);
+        merged.apply(env_layer, ConfigSource::Environment);
+        if let Some(cli) = self.cli_overrides.clone() {
+            merged.apply(cli, ConfigSource::Cli);
+        }
+
+        let (resolved, layer_provenance, mut merge_warnings) = merged.finalize(&default_paths)?;
+        provenance.extend(layer_provenance);
+
+        let mut warnings = validate::validate_config(&resolved, self.allow_dev)?;
+        warnings.append(&mut merge_warnings);
+
+        Ok(ResolvedConfig {
+            config: resolved,
+            provenance,
+            warnings,
+        })
+    }
+}
+
+impl Default for ConfigResolver {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::loaders::{ConfigLayer, EnvironmentLayer};
+    use std::path::PathBuf;
+    use tempfile::tempdir;
+
+    #[test]
+    fn precedence_prefers_cli_over_env() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+
+        let env_layer = ConfigLayer {
+            environment: Some(EnvironmentLayer {
+                env_id: Some(serde_json::from_str("\"staging\"").unwrap()),
+                deployment: None,
+                connection: None,
+                region: None,
+            }),
+            ..Default::default()
+        };
+
+        let cli_layer = ConfigLayer {
+            environment: Some(EnvironmentLayer {
+                env_id: Some(serde_json::from_str("\"prod\"").unwrap()),
+                deployment: None,
+                connection: None,
+                region: None,
+            }),
+            ..Default::default()
+        };
+
+        let default_paths = DefaultPaths::from_root(&root);
+        let mut merged = merge::MergeState::new(
+            loaders::default_layer(&root, &default_paths),
+            ConfigSource::Default,
+        );
+        merged.apply(env_layer, ConfigSource::Environment);
+        merged.apply(cli_layer, ConfigSource::Cli);
+        let (resolved, _, _) = merged.finalize(&default_paths).unwrap();
+        let env_id_str = serde_json::to_string(&resolved.environment.env_id).unwrap();
+        assert!(env_id_str.contains("prod"));
+    }
+
+    #[test]
+    fn relative_paths_resolve_to_absolute() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let default_paths = DefaultPaths::from_root(&root);
+
+        let layer = ConfigLayer {
+            paths: Some(crate::loaders::PathsLayer {
+                state_dir: Some(PathBuf::from("relative/state")),
+                cache_dir: Some(PathBuf::from("relative/cache")),
+                logs_dir: Some(PathBuf::from("relative/logs")),
+                greentic_root: Some(PathBuf::from(".")),
+            }),
+            ..Default::default()
+        };
+
+        let mut merged = merge::MergeState::new(
+            loaders::default_layer(&root, &default_paths),
+            ConfigSource::Default,
+        );
+        merged.apply(layer, ConfigSource::Project);
+        let (resolved, _, _) = merged.finalize(&default_paths).unwrap();
+        assert!(resolved.paths.state_dir.is_absolute());
+        assert!(resolved.paths.cache_dir.is_absolute());
+        assert!(resolved.paths.logs_dir.is_absolute());
+    }
+
+    #[test]
+    fn dev_config_requires_dev_env_without_allow() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let default_paths = DefaultPaths::from_root(&root);
+
+        let layer = ConfigLayer {
+            dev: Some(crate::loaders::DevLayer {
+                default_env: Some(serde_json::from_str("\"dev\"").unwrap()),
+                default_tenant: Some("acme".into()),
+                default_team: None,
+            }),
+            environment: Some(EnvironmentLayer {
+                env_id: Some(serde_json::from_str("\"prod\"").unwrap()),
+                deployment: None,
+                connection: None,
+                region: None,
+            }),
+            ..Default::default()
+        };
+
+        let mut merged = merge::MergeState::new(
+            loaders::default_layer(&root, &default_paths),
+            ConfigSource::Default,
+        );
+        merged.apply(layer, ConfigSource::Cli);
+        let (resolved, _, _) = merged.finalize(&default_paths).unwrap();
+        let validation = validate::validate_config(&resolved, false);
+        assert!(validation.is_err());
+    }
+}
