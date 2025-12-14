@@ -381,12 +381,13 @@ dependencies = [
 
 [[package]]
 name = "greentic-secrets-spec"
-version = "0.4.4"
+version = "0.4.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "20a569a0c0e11151b093a7d8ebb36f0704bd4f96558272020900ebc745120970"
+checksum = "953b113cb908557d118ba426f157b02bade96133b7a279a23d9b85fc887c3e27"
 dependencies = [
  "async-trait",
  "serde",
+ "serde_json",
  "thiserror",
  "time",
 ]
