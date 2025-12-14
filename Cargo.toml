@@ -25,6 +25,6 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 anyhow = "1.0"
 itertools = "0.14"
 greentic-types = "0.4"
+greentic-config-types = { version = "0.4.0", path = "crates/greentic-config-types" }
 clap = "4"
 tempfile = "3"
-

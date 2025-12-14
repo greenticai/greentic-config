@@ -68,6 +68,17 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
+name = "async-trait"
+version = "0.1.89"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9035ad2d096bed7955a320ee7e2230574d28fd3c3a0f186cbea1ff3c7eed5dbb"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -369,14 +380,27 @@ dependencies = [
 ]
 
 [[package]]
-name = "greentic-types"
-version = "0.4.15"
+name = "greentic-secrets-spec"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4054eef4f7b6acc6b41b27bd67bc5ad8a861725649b7dc7fc0aac962d25b47ef"
+checksum = "20a569a0c0e11151b093a7d8ebb36f0704bd4f96558272020900ebc745120970"
+dependencies = [
+ "async-trait",
+ "serde",
+ "thiserror",
+ "time",
+]
+
+[[package]]
+name = "greentic-types"
+version = "0.4.16"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "21f280aa6806f9e5c3c6269ab84ff7211edf0574d6fc04862bc7027ec4d7e2e3"
 dependencies = [
  "chrono",
  "ciborium",
  "fnv",
+ "greentic-secrets-spec",
  "indexmap 2.12.1",
  "semver",
  "serde",
