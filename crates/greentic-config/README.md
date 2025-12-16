@@ -9,7 +9,11 @@ Enterprise configuration loader for Greentic hosts. This crate resolves configur
 - Validation hooks for dev-only fields, path sanity, and unsafe combinations.
 - Explain output (string/JSON) for operators.
 
+## Services and events mapping
+- Services endpoints (e.g., `services.events.url`) live in `greentic-config-types`; resolver applies precedence and exposes provenance.
+- Events knobs (`events.reconnect`, `events.backoff`) get defaults (reconnect enabled, max_retries=50, backoff initial=250ms, max=30s, multiplier=2.0, jitter=true) and validation (offline + remote endpoint is rejected; backoff sanity enforced).
+- No secrets in config; route auth material via your secrets backend.
+
 ## Status
 - Schema and loader implemented; CLI binary behind the `cli` feature (`greentic-config show|explain|validate`).
 - Defaults are non-secret and filesystem/network safe.
-

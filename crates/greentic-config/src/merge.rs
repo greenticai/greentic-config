@@ -3,9 +3,10 @@ use crate::loaders::ConfigLayer;
 use crate::loaders::{EnvironmentLayer, PackSourceLayer, PacksLayer, default_env_id};
 use crate::paths::DefaultPaths;
 use greentic_config_types::{
-    ConfigSource, ConfigVersion, DevConfig, EnvironmentConfig, GreenticConfig, NetworkConfig,
-    PackSourceConfig, PackTrustConfig, PacksConfig, PathsConfig, ProvenancePath, RuntimeConfig,
-    SecretsBackendRefConfig, TelemetryConfig, TelemetryExporterKind, TlsMode,
+    BackoffConfig, ConfigSource, ConfigVersion, DevConfig, EnvironmentConfig, EventsConfig,
+    GreenticConfig, NetworkConfig, PackSourceConfig, PackTrustConfig, PacksConfig, PathsConfig,
+    ProvenancePath, ReconnectConfig, RuntimeConfig, SecretsBackendRefConfig, ServiceEndpointConfig,
+    ServicesConfig, TelemetryConfig, TelemetryExporterKind, TlsMode,
 };
 use std::path::PathBuf;
 
@@ -93,6 +94,33 @@ impl MergeState {
                 paths.logs_dir,
                 &mut self.provenance,
                 "paths.logs_dir",
+                &source,
+            );
+        }
+
+        if let Some(services) = layer.services {
+            let target = self.acc.services.get_or_insert_with(Default::default);
+            if let Some(events) = services.events {
+                target.events = Some(events.clone());
+                self.provenance
+                    .insert(ProvenancePath("services.events".into()), source.clone());
+            }
+        }
+
+        if let Some(events) = layer.events {
+            let target = self.acc.events.get_or_insert_with(Default::default);
+            set_field(
+                &mut target.reconnect,
+                events.reconnect,
+                &mut self.provenance,
+                "events.reconnect",
+                &source,
+            );
+            set_field(
+                &mut target.backoff,
+                events.backoff,
+                &mut self.provenance,
+                "events.backoff",
                 &source,
             );
         }
@@ -322,6 +350,38 @@ impl MergeState {
             logs_dir,
         };
 
+        let services_layer = self.acc.services.take().unwrap_or_default();
+        let services = services_layer
+            .events
+            .map(|evt| -> anyhow::Result<ServicesConfig> {
+                let url = evt.url.ok_or_else(|| {
+                    anyhow::anyhow!("services.events.url is required when events are configured")
+                })?;
+                Ok(ServicesConfig {
+                    events: Some(ServiceEndpointConfig {
+                        url,
+                        headers: evt.headers,
+                    }),
+                })
+            })
+            .transpose()?;
+
+        let events_layer = self.acc.events.take().unwrap_or_default();
+        let reconnect_layer = events_layer.reconnect.unwrap_or_default();
+        let backoff_layer = events_layer.backoff.unwrap_or_default();
+        let events = EventsConfig {
+            reconnect: Some(ReconnectConfig {
+                enabled: Some(reconnect_layer.enabled.unwrap_or(true)),
+                max_retries: reconnect_layer.max_retries.or(Some(50)),
+            }),
+            backoff: Some(BackoffConfig {
+                initial_ms: Some(backoff_layer.initial_ms.unwrap_or(250)),
+                max_ms: Some(backoff_layer.max_ms.unwrap_or(30_000)),
+                multiplier: Some(backoff_layer.multiplier.unwrap_or(2.0)),
+                jitter: Some(backoff_layer.jitter.unwrap_or(true)),
+            }),
+        };
+
         let runtime_layer = self.acc.runtime.take().unwrap_or_default();
         let runtime = RuntimeConfig {
             max_concurrency: runtime_layer.max_concurrency,
@@ -384,6 +444,8 @@ impl MergeState {
             environment,
             paths,
             packs: Some(packs),
+            services,
+            events: Some(events),
             runtime,
             telemetry,
             network,

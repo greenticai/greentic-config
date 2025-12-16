@@ -107,11 +107,15 @@ impl Default for ConfigResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::loaders::{ConfigLayer, EnvironmentLayer};
+    use crate::loaders::{
+        BackoffLayer, ConfigLayer, EnvironmentLayer, EventsLayer, ServiceEndpointLayer,
+        ServicesLayer,
+    };
     use greentic_config_types::PackSourceConfig;
     use greentic_types::ConnectionKind;
     use std::path::PathBuf;
     use tempfile::tempdir;
+    use url::Url;
 
     #[test]
     fn precedence_prefers_cli_over_env() {
@@ -285,6 +289,163 @@ mod tests {
         assert!(matches!(
             validation,
             Err(validate::ValidationError::PacksSourceOffline)
+        ));
+    }
+
+    #[test]
+    fn events_endpoint_precedence_and_provenance() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let default_paths = DefaultPaths::from_root(&root);
+        let user_layer = ConfigLayer {
+            services: Some(ServicesLayer {
+                events: Some(ServiceEndpointLayer {
+                    url: Some(Url::parse("https://user.example.com").unwrap()),
+                    headers: None,
+                }),
+            }),
+            ..Default::default()
+        };
+        let project_layer = ConfigLayer {
+            services: Some(ServicesLayer {
+                events: Some(ServiceEndpointLayer {
+                    url: Some(Url::parse("https://project.example.com").unwrap()),
+                    headers: None,
+                }),
+            }),
+            ..Default::default()
+        };
+        let env_layer = ConfigLayer {
+            services: Some(ServicesLayer {
+                events: Some(ServiceEndpointLayer {
+                    url: Some(Url::parse("https://env.example.com").unwrap()),
+                    headers: None,
+                }),
+            }),
+            ..Default::default()
+        };
+        let cli_layer = ConfigLayer {
+            services: Some(ServicesLayer {
+                events: Some(ServiceEndpointLayer {
+                    url: Some(Url::parse("https://cli.example.com").unwrap()),
+                    headers: None,
+                }),
+            }),
+            ..Default::default()
+        };
+
+        let mut merged = merge::MergeState::new(
+            loaders::default_layer(&root, &default_paths),
+            ConfigSource::Default,
+        );
+        merged.apply(user_layer, ConfigSource::User);
+        merged.apply(project_layer, ConfigSource::Project);
+        merged.apply(env_layer, ConfigSource::Environment);
+        merged.apply(cli_layer, ConfigSource::Cli);
+        let (resolved, provenance, _) = merged.finalize(&default_paths).unwrap();
+
+        let url = resolved.services.unwrap().events.unwrap().url.to_string();
+        assert_eq!(url, "https://cli.example.com/");
+        assert_eq!(
+            provenance
+                .get(&greentic_config_types::ProvenancePath(
+                    "services.events".into()
+                ))
+                .cloned(),
+            Some(ConfigSource::Cli)
+        );
+    }
+
+    #[test]
+    fn offline_env_blocks_remote_events_endpoint() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let default_paths = DefaultPaths::from_root(&root);
+
+        let layer = ConfigLayer {
+            environment: Some(EnvironmentLayer {
+                env_id: Some(serde_json::from_str("\"dev\"").unwrap()),
+                deployment: None,
+                connection: Some(ConnectionKind::Offline),
+                region: None,
+            }),
+            services: Some(ServicesLayer {
+                events: Some(ServiceEndpointLayer {
+                    url: Some(Url::parse("https://events.example.com").unwrap()),
+                    headers: None,
+                }),
+            }),
+            ..Default::default()
+        };
+
+        let mut merged = merge::MergeState::new(
+            loaders::default_layer(&root, &default_paths),
+            ConfigSource::Default,
+        );
+        merged.apply(layer, ConfigSource::Project);
+        let (resolved, _, _) = merged.finalize(&default_paths).unwrap();
+        let validation = validate::validate_config(&resolved, false);
+        assert!(matches!(
+            validation,
+            Err(validate::ValidationError::EventsEndpointOffline(_))
+        ));
+    }
+
+    #[test]
+    fn backoff_validation_catches_invalid_values() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let default_paths = DefaultPaths::from_root(&root);
+
+        let invalid_backoff = ConfigLayer {
+            events: Some(EventsLayer {
+                backoff: Some(BackoffLayer {
+                    initial_ms: Some(0),
+                    max_ms: Some(10),
+                    multiplier: Some(0.5),
+                    jitter: None,
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let mut merged = merge::MergeState::new(
+            loaders::default_layer(&root, &default_paths),
+            ConfigSource::Default,
+        );
+        merged.apply(invalid_backoff, ConfigSource::Project);
+        let (resolved, _, _) = merged.finalize(&default_paths).unwrap();
+
+        let validation = validate::validate_config(&resolved, true);
+        assert!(matches!(
+            validation,
+            Err(validate::ValidationError::EventsBackoffInitial(0))
+        ));
+
+        let invalid_max = ConfigLayer {
+            events: Some(EventsLayer {
+                backoff: Some(BackoffLayer {
+                    initial_ms: Some(200),
+                    max_ms: Some(100),
+                    multiplier: Some(2.0),
+                    jitter: None,
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let mut merged = merge::MergeState::new(
+            loaders::default_layer(&root, &default_paths),
+            ConfigSource::Default,
+        );
+        merged.apply(invalid_max, ConfigSource::Project);
+        let (resolved, _, _) = merged.finalize(&default_paths).unwrap();
+        let validation = validate::validate_config(&resolved, true);
+        assert!(matches!(
+            validation,
+            Err(validate::ValidationError::EventsBackoffMax { .. })
         ));
     }
 }

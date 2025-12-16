@@ -1,4 +1,6 @@
-use greentic_config_types::{GreenticConfig, PackSourceConfig, TelemetryExporterKind};
+use greentic_config_types::{
+    BackoffConfig, GreenticConfig, PackSourceConfig, ServiceEndpointConfig, TelemetryExporterKind,
+};
 use greentic_types::{ConnectionKind, EnvId};
 use thiserror::Error;
 
@@ -12,6 +14,14 @@ pub enum ValidationError {
     TelemetrySampling(f32),
     #[error("packs.source requires connectivity but environment.connection is offline")]
     PacksSourceOffline,
+    #[error("events endpoint not allowed for offline connection: {0}")]
+    EventsEndpointOffline(String),
+    #[error("events backoff.initial_ms must be greater than 0 (got {0})")]
+    EventsBackoffInitial(u64),
+    #[error("events backoff.max_ms must be >= initial_ms (got max={max}, initial={initial})")]
+    EventsBackoffMax { max: u64, initial: u64 },
+    #[error("events backoff.multiplier must be finite and >= 1.0 (got {0})")]
+    EventsBackoffMultiplier(f64),
 }
 
 pub fn validate_config(
@@ -65,6 +75,18 @@ pub fn validate_config(
         }
     }
 
+    if let Some(services) = &config.services
+        && let Some(events) = &services.events
+    {
+        validate_events_endpoint(events, &config.environment.connection)?;
+    }
+
+    if let Some(events) = &config.events
+        && let Some(backoff) = &events.backoff
+    {
+        validate_backoff(backoff)?;
+    }
+
     Ok(warnings)
 }
 
@@ -84,4 +106,46 @@ fn ensure_absolute(path: &std::path::Path) -> Result<(), ValidationError> {
     } else {
         Err(ValidationError::RelativePath(path.display().to_string()))
     }
+}
+
+fn validate_events_endpoint(
+    endpoint: &ServiceEndpointConfig,
+    connection: &Option<ConnectionKind>,
+) -> Result<(), ValidationError> {
+    if matches!(connection, Some(ConnectionKind::Offline)) && !is_local_url(&endpoint.url) {
+        return Err(ValidationError::EventsEndpointOffline(
+            endpoint.url.to_string(),
+        ));
+    }
+    Ok(())
+}
+
+fn is_local_url(url: &url::Url) -> bool {
+    match url.host_str() {
+        Some("localhost") => true,
+        Some(host) => host
+            .parse::<std::net::IpAddr>()
+            .map(|ip| ip.is_loopback())
+            .unwrap_or(false),
+        None => false,
+    }
+}
+
+fn validate_backoff(backoff: &BackoffConfig) -> Result<(), ValidationError> {
+    if let Some(initial) = backoff.initial_ms
+        && initial == 0
+    {
+        return Err(ValidationError::EventsBackoffInitial(initial));
+    }
+    if let (Some(max), Some(initial)) = (backoff.max_ms, backoff.initial_ms)
+        && max < initial
+    {
+        return Err(ValidationError::EventsBackoffMax { max, initial });
+    }
+    if let Some(multiplier) = backoff.multiplier
+        && (!multiplier.is_finite() || multiplier < 1.0)
+    {
+        return Err(ValidationError::EventsBackoffMultiplier(multiplier));
+    }
+    Ok(())
 }

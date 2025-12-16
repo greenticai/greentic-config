@@ -22,6 +22,10 @@ pub struct ConfigLayer {
     #[serde(default)]
     pub paths: Option<PathsLayer>,
     #[serde(default)]
+    pub services: Option<ServicesLayer>,
+    #[serde(default)]
+    pub events: Option<EventsLayer>,
+    #[serde(default)]
     pub runtime: Option<RuntimeLayer>,
     #[serde(default)]
     pub telemetry: Option<TelemetryLayer>,
@@ -57,6 +61,48 @@ pub struct PathsLayer {
     pub cache_dir: Option<PathBuf>,
     #[serde(default)]
     pub logs_dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ServicesLayer {
+    #[serde(default)]
+    pub events: Option<ServiceEndpointLayer>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ServiceEndpointLayer {
+    #[serde(default)]
+    pub url: Option<url::Url>,
+    #[serde(default)]
+    pub headers: Option<std::collections::BTreeMap<String, String>>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct EventsLayer {
+    #[serde(default)]
+    pub reconnect: Option<ReconnectLayer>,
+    #[serde(default)]
+    pub backoff: Option<BackoffLayer>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ReconnectLayer {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub max_retries: Option<u32>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct BackoffLayer {
+    #[serde(default)]
+    pub initial_ms: Option<u64>,
+    #[serde(default)]
+    pub max_ms: Option<u64>,
+    #[serde(default)]
+    pub multiplier: Option<f64>,
+    #[serde(default)]
+    pub jitter: Option<bool>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -169,6 +215,19 @@ pub fn default_layer(root: &Path, defaults: &DefaultPaths) -> ConfigLayer {
             cache_dir: Some(defaults.cache_dir.clone()),
             logs_dir: Some(defaults.logs_dir.clone()),
         }),
+        services: None,
+        events: Some(EventsLayer {
+            reconnect: Some(ReconnectLayer {
+                enabled: Some(true),
+                max_retries: Some(50),
+            }),
+            backoff: Some(BackoffLayer {
+                initial_ms: Some(250),
+                max_ms: Some(30_000),
+                multiplier: Some(2.0),
+                jitter: Some(true),
+            }),
+        }),
         runtime: Some(RuntimeLayer::default()),
         telemetry: Some(TelemetryLayer {
             enabled: Some(true),
@@ -275,6 +334,14 @@ pub fn load_env_layer() -> ConfigLayer {
                 layer.paths.get_or_insert_with(Default::default).logs_dir =
                     Some(PathBuf::from(value))
             }
+            "GREENTIC_SERVICES_EVENTS_URL" => {
+                layer
+                    .services
+                    .get_or_insert_with(Default::default)
+                    .events
+                    .get_or_insert_with(Default::default)
+                    .url = parse_string_as::<url::Url>(&value)
+            }
             "GREENTIC_RUNTIME_MAX_CONCURRENCY" => {
                 layer
                     .runtime
@@ -351,6 +418,54 @@ pub fn load_env_layer() -> ConfigLayer {
             }
             "GREENTIC_DEV_DEFAULT_TEAM" => {
                 layer.dev.get_or_insert_with(Default::default).default_team = Some(value)
+            }
+            "GREENTIC_EVENTS_RECONNECT_ENABLED" => {
+                layer
+                    .events
+                    .get_or_insert_with(Default::default)
+                    .reconnect
+                    .get_or_insert_with(Default::default)
+                    .enabled = parse_bool(&value)
+            }
+            "GREENTIC_EVENTS_RECONNECT_MAX_RETRIES" => {
+                layer
+                    .events
+                    .get_or_insert_with(Default::default)
+                    .reconnect
+                    .get_or_insert_with(Default::default)
+                    .max_retries = parse_u32(&value)
+            }
+            "GREENTIC_EVENTS_BACKOFF_INITIAL_MS" => {
+                layer
+                    .events
+                    .get_or_insert_with(Default::default)
+                    .backoff
+                    .get_or_insert_with(Default::default)
+                    .initial_ms = parse_u64(&value)
+            }
+            "GREENTIC_EVENTS_BACKOFF_MAX_MS" => {
+                layer
+                    .events
+                    .get_or_insert_with(Default::default)
+                    .backoff
+                    .get_or_insert_with(Default::default)
+                    .max_ms = parse_u64(&value)
+            }
+            "GREENTIC_EVENTS_BACKOFF_MULTIPLIER" => {
+                layer
+                    .events
+                    .get_or_insert_with(Default::default)
+                    .backoff
+                    .get_or_insert_with(Default::default)
+                    .multiplier = parse_f32(&value).map(|v| v as f64)
+            }
+            "GREENTIC_EVENTS_BACKOFF_JITTER" => {
+                layer
+                    .events
+                    .get_or_insert_with(Default::default)
+                    .backoff
+                    .get_or_insert_with(Default::default)
+                    .jitter = parse_bool(&value)
             }
             _ => {}
         }

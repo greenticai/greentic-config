@@ -48,6 +48,37 @@ pub fn explain(
             "network.tls_mode".into()
         )))
     ));
+    if let Some(services) = &config.services
+        && let Some(events) = &services.events
+    {
+        lines.push(format!(
+            "- services.events.url: {} ({})",
+            events.url,
+            render_source(provenance.get(&greentic_config_types::ProvenancePath(
+                "services.events".into()
+            )))
+        ));
+    }
+    if let Some(events) = &config.events {
+        if let Some(backoff) = &events.backoff {
+            lines.push(format!(
+                "- events.backoff.initial_ms: {:?} ({})",
+                backoff.initial_ms,
+                render_source(provenance.get(&greentic_config_types::ProvenancePath(
+                    "events.backoff".into()
+                )))
+            ));
+        }
+        if let Some(reconnect) = &events.reconnect {
+            lines.push(format!(
+                "- events.reconnect.enabled: {:?} ({})",
+                reconnect.enabled,
+                render_source(provenance.get(&greentic_config_types::ProvenancePath(
+                    "events.reconnect".into()
+                )))
+            ));
+        }
+    }
 
     if !warnings.is_empty() {
         lines.push("Warnings:".into());

@@ -8,17 +8,17 @@
 ## 2. Main Components and Functionality
 - **Path:** `crates/greentic-config-types`
   - **Role:** Schema-only config types with serde support.
-  - **Key functionality:** Defines `GreenticConfig` (root), `ConfigVersion`, `EnvironmentConfig`, `PathsConfig`, `RuntimeConfig`, `TelemetryConfig`, `NetworkConfig`, `SecretsBackendRefConfig`, `DevConfig`, provenance helpers.
-  - **Notes:** Uses `greentic-types` for `EnvId`, `DeploymentCtx`, `ConnectionKind`; durations standardized as `_ms` millisecond fields; telemetry exporter enum `otlp|stdout|none`; TLS mode enum `disabled|system|strict`.
+  - **Key functionality:** Defines `GreenticConfig` (root), `ConfigVersion`, `EnvironmentConfig`, `PathsConfig`, services/events sections, packs, `RuntimeConfig`, `TelemetryConfig`, `NetworkConfig`, `SecretsBackendRefConfig`, `DevConfig`, provenance helpers.
+  - **Notes:** Uses `greentic-types` for `EnvId`, `DeploymentCtx`, `ConnectionKind`; durations standardized as `_ms` millisecond fields; telemetry exporter enum `otlp|stdout|none`; TLS mode enum `disabled|system|strict`; new `ServicesConfig` with `ServiceEndpointConfig` and `EventsConfig` backoff/reconnect knobs (no secrets).
 
 - **Path:** `crates/greentic-config`
   - **Role:** Config loader/resolver with precedence and validation.
   - **Key functionality:** 
     - Root discovery (`paths.rs`) via nearest `.greentic/`, `.git/`, or `Cargo.toml`; default paths under `<root>/.greentic`.
     - Layered loading (`loaders.rs`): defaults, user config (`~/.config/greentic/config.toml`), project config (`.greentic/config.toml`), env vars (`GREENTIC_*`), CLI overrides; supports TOML/JSON.
-    - Deep merge + provenance (`merge.rs`): precedence CLI > env > project > user > defaults; per-field provenance map.
-    - Validation (`validate.rs`): dev fields gated by env unless `allow_dev`, absolute path enforcement, telemetry sampling bounds, warnings for missing optional dev team or enabled-without-exporter.
-    - Explain (`explain.rs`): produces text + JSON report with provenance and warnings.
+    - Deep merge + provenance (`merge.rs`): precedence CLI > env > project > user > defaults; per-field provenance map. Defaults for events reconnect/backoff knobs.
+    - Validation (`validate.rs`): dev fields gated by env unless `allow_dev`, absolute path enforcement, telemetry sampling bounds, packs offline guard, events endpoint offline guard, backoff sanity checks, warnings for missing optional dev team or enabled-without-exporter.
+    - Explain (`explain.rs`): produces text + JSON report with provenance and warnings (includes services/events values).
     - Public API: `ConfigResolver::new/with_project_root/with_cli_overrides/allow_dev/load`, `ResolvedConfig`, `explain`.
     - Optional CLI (`src/bin/greentic-config.rs`, feature `cli`): `show`, `explain`, `validate`.
 - **Tooling/CI:**

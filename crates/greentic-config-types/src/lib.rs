@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 use std::path::PathBuf;
+use url::Url;
 
 pub use greentic_types::{ConnectionKind, DeploymentCtx, EnvId};
 
@@ -27,6 +29,10 @@ pub struct GreenticConfig {
     pub paths: PathsConfig,
     #[serde(default)]
     pub packs: Option<PacksConfig>,
+    #[serde(default)]
+    pub services: Option<ServicesConfig>,
+    #[serde(default)]
+    pub events: Option<EventsConfig>,
     pub runtime: RuntimeConfig,
     pub telemetry: TelemetryConfig,
     pub network: NetworkConfig,
@@ -61,6 +67,47 @@ pub struct PathsConfig {
     pub state_dir: PathBuf,
     pub cache_dir: PathBuf,
     pub logs_dir: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServicesConfig {
+    #[serde(default)]
+    pub events: Option<ServiceEndpointConfig>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceEndpointConfig {
+    pub url: Url,
+    #[serde(default)]
+    pub headers: Option<BTreeMap<String, String>>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EventsConfig {
+    #[serde(default)]
+    pub reconnect: Option<ReconnectConfig>,
+    #[serde(default)]
+    pub backoff: Option<BackoffConfig>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct ReconnectConfig {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub max_retries: Option<u32>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct BackoffConfig {
+    #[serde(default)]
+    pub initial_ms: Option<u64>,
+    #[serde(default)]
+    pub max_ms: Option<u64>,
+    #[serde(default)]
+    pub multiplier: Option<f64>,
+    #[serde(default)]
+    pub jitter: Option<bool>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -203,6 +250,7 @@ pub struct DevConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use url::Url;
 
     fn sample_toml() -> &'static str {
         r#"
@@ -217,6 +265,22 @@ greentic_root = "/workspace"
 state_dir = "/workspace/.greentic"
 cache_dir = "/workspace/.greentic/cache"
 logs_dir = "/workspace/.greentic/logs"
+
+[services]
+
+[services.events]
+url = "https://events.greentic.local"
+headers = { "x-routing-key" = "tenant-1" }
+
+[events.reconnect]
+enabled = true
+max_retries = 25
+
+[events.backoff]
+initial_ms = 250
+max_ms = 30000
+multiplier = 2.0
+jitter = true
 
 [packs]
 cache_dir = "/workspace/.greentic/cache/packs"
@@ -278,6 +342,16 @@ default_team = "devex"
                 "cache_dir": "/workspace/.greentic/cache",
                 "logs_dir": "/workspace/.greentic/logs"
             },
+            "services": {
+                "events": {
+                    "url": "https://events.greentic.local",
+                    "headers": {"x-routing-key": "tenant-1"}
+                }
+            },
+            "events": {
+                "reconnect": {"enabled": true, "max_retries": 10},
+                "backoff": {"initial_ms": 100, "max_ms": 5000, "multiplier": 1.5, "jitter": false}
+            },
             "packs": {
                 "cache_dir": "/workspace/.greentic/cache/packs",
                 "index_cache_ttl_secs": 3600,
@@ -296,5 +370,41 @@ default_team = "devex"
         let serialized = serde_json::to_string(&config).expect("json encode");
         let round: GreenticConfig = serde_json::from_str(&serialized).expect("json decode round");
         assert_eq!(config, round);
+    }
+
+    #[test]
+    fn services_and_events_are_schema_only() {
+        let endpoint = ServiceEndpointConfig {
+            url: Url::parse("https://events.greentic.local").unwrap(),
+            headers: None,
+        };
+        let services = ServicesConfig {
+            events: Some(endpoint),
+        };
+        let events = EventsConfig {
+            reconnect: Some(ReconnectConfig {
+                enabled: Some(true),
+                max_retries: Some(5),
+            }),
+            backoff: Some(BackoffConfig {
+                initial_ms: Some(100),
+                max_ms: Some(1000),
+                multiplier: Some(2.0),
+                jitter: Some(true),
+            }),
+        };
+
+        let serialized = toml::to_string(&services).expect("serialize services");
+        let services_back: ServicesConfig =
+            toml::from_str(&serialized).expect("deserialize services");
+        assert_eq!(
+            services_back.events.unwrap().url.as_str(),
+            "https://events.greentic.local/"
+        );
+
+        let serialized_events = serde_json::to_string(&events).expect("serialize events");
+        let events_back: EventsConfig =
+            serde_json::from_str(&serialized_events).expect("deserialize events");
+        assert_eq!(events_back.backoff.unwrap().initial_ms, Some(100));
     }
 }
