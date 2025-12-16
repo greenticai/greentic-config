@@ -1,5 +1,5 @@
-use greentic_config_types::{GreenticConfig, TelemetryExporterKind};
-use greentic_types::EnvId;
+use greentic_config_types::{GreenticConfig, PackSourceConfig, TelemetryExporterKind};
+use greentic_types::{ConnectionKind, EnvId};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -10,6 +10,8 @@ pub enum ValidationError {
     RelativePath(String),
     #[error("telemetry sampling must be between 0.0 and 1.0 (got {0})")]
     TelemetrySampling(f32),
+    #[error("packs.source requires connectivity but environment.connection is offline")]
+    PacksSourceOffline,
 }
 
 pub fn validate_config(
@@ -51,6 +53,18 @@ pub fn validate_config(
             .push("telemetry.enabled=true but exporter=none; telemetry will be disabled".into());
     }
 
+    if let Some(packs) = &config.packs {
+        ensure_absolute(&packs.cache_dir)?;
+        match &packs.source {
+            PackSourceConfig::LocalIndex { path } => ensure_absolute(path)?,
+            PackSourceConfig::HttpIndex { .. } | PackSourceConfig::OciRegistry { .. } => {
+                if matches!(config.environment.connection, Some(ConnectionKind::Offline)) {
+                    return Err(ValidationError::PacksSourceOffline);
+                }
+            }
+        }
+    }
+
     Ok(warnings)
 }
 
@@ -62,4 +76,12 @@ fn env_id_label(env: &EnvId) -> String {
     serde_json::to_value(env)
         .map(|v| v.to_string())
         .unwrap_or_else(|_| format!("{env:?}"))
+}
+
+fn ensure_absolute(path: &std::path::Path) -> Result<(), ValidationError> {
+    if path.is_absolute() {
+        Ok(())
+    } else {
+        Err(ValidationError::RelativePath(path.display().to_string()))
+    }
 }

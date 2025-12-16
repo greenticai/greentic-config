@@ -108,6 +108,8 @@ impl Default for ConfigResolver {
 mod tests {
     use super::*;
     use crate::loaders::{ConfigLayer, EnvironmentLayer};
+    use greentic_config_types::PackSourceConfig;
+    use greentic_types::ConnectionKind;
     use std::path::PathBuf;
     use tempfile::tempdir;
 
@@ -161,6 +163,13 @@ mod tests {
                 logs_dir: Some(PathBuf::from("relative/logs")),
                 greentic_root: Some(PathBuf::from(".")),
             }),
+            packs: Some(crate::loaders::PacksLayer {
+                cache_dir: Some(PathBuf::from("relative/packs/cache")),
+                source: Some(crate::loaders::PackSourceLayer::LocalIndex {
+                    path: Some(PathBuf::from("relative/packs/index.json")),
+                }),
+                ..Default::default()
+            }),
             ..Default::default()
         };
 
@@ -173,6 +182,11 @@ mod tests {
         assert!(resolved.paths.state_dir.is_absolute());
         assert!(resolved.paths.cache_dir.is_absolute());
         assert!(resolved.paths.logs_dir.is_absolute());
+        let packs = resolved.packs.unwrap();
+        assert!(packs.cache_dir.is_absolute());
+        if let PackSourceConfig::LocalIndex { path } = packs.source {
+            assert!(path.is_absolute());
+        }
     }
 
     #[test]
@@ -204,5 +218,73 @@ mod tests {
         let (resolved, _, _) = merged.finalize(&default_paths).unwrap();
         let validation = validate::validate_config(&resolved, false);
         assert!(validation.is_err());
+    }
+
+    #[test]
+    fn packs_default_to_paths_based_locations() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let default_paths = DefaultPaths::from_root(&root);
+        let cache_dir = root.join("custom_cache");
+        let state_dir = root.join(".state_dir");
+
+        let layer = ConfigLayer {
+            paths: Some(crate::loaders::PathsLayer {
+                cache_dir: Some(cache_dir.clone()),
+                state_dir: Some(state_dir.clone()),
+                greentic_root: Some(root.clone()),
+                logs_dir: None,
+            }),
+            ..Default::default()
+        };
+
+        let mut merged = merge::MergeState::new(
+            loaders::default_layer(&root, &default_paths),
+            ConfigSource::Default,
+        );
+        merged.apply(layer, ConfigSource::Project);
+        let (resolved, _, _) = merged.finalize(&default_paths).unwrap();
+        let packs = resolved.packs.unwrap();
+        assert_eq!(packs.cache_dir, cache_dir.join("packs"));
+        if let PackSourceConfig::LocalIndex { path } = packs.source {
+            assert_eq!(path, state_dir.join("packs").join("index.json"));
+        } else {
+            panic!("expected local index default");
+        }
+    }
+
+    #[test]
+    fn offline_env_forbids_remote_packs() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let default_paths = DefaultPaths::from_root(&root);
+
+        let layer = ConfigLayer {
+            environment: Some(EnvironmentLayer {
+                env_id: Some(serde_json::from_str("\"dev\"").unwrap()),
+                deployment: None,
+                connection: Some(ConnectionKind::Offline),
+                region: None,
+            }),
+            packs: Some(crate::loaders::PacksLayer {
+                source: Some(crate::loaders::PackSourceLayer::HttpIndex {
+                    url: Some("https://example.com/index.json".into()),
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let mut merged = merge::MergeState::new(
+            loaders::default_layer(&root, &default_paths),
+            ConfigSource::Default,
+        );
+        merged.apply(layer, ConfigSource::Project);
+        let (resolved, _, _) = merged.finalize(&default_paths).unwrap();
+        let validation = validate::validate_config(&resolved, false);
+        assert!(matches!(
+            validation,
+            Err(validate::ValidationError::PacksSourceOffline)
+        ));
     }
 }

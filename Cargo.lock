@@ -68,17 +68,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
-name = "async-trait"
-version = "0.1.89"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9035ad2d096bed7955a320ee7e2230574d28fd3c3a0f186cbea1ff3c7eed5dbb"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -104,9 +93,9 @@ checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
 
 [[package]]
 name = "camino"
-version = "1.2.1"
+version = "1.2.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "276a59bf2b2c967788139340c9f0c5b12d7fd6630315c15c217e559de85d2609"
+checksum = "e629a66d692cb9ff1a1c664e41771b3dcaf961985a9774c0eb0bd1b51cf60a48"
 
 [[package]]
 name = "cc"
@@ -352,7 +341,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-config"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "anyhow",
  "camino",
@@ -371,7 +360,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-config-types"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "greentic-types",
  "serde",
@@ -380,28 +369,15 @@ dependencies = [
 ]
 
 [[package]]
-name = "greentic-secrets-spec"
-version = "0.4.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "953b113cb908557d118ba426f157b02bade96133b7a279a23d9b85fc887c3e27"
-dependencies = [
- "async-trait",
- "serde",
- "serde_json",
- "thiserror",
- "time",
-]
-
-[[package]]
 name = "greentic-types"
-version = "0.4.16"
+version = "0.4.23"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21f280aa6806f9e5c3c6269ab84ff7211edf0574d6fc04862bc7027ec4d7e2e3"
+checksum = "76eb72861b2f6873e39424f07caffa39df037cbdba6b7004d53567c6003fdcc7"
 dependencies = [
+ "anyhow",
  "chrono",
  "ciborium",
  "fnv",
- "greentic-secrets-spec",
  "indexmap 2.12.1",
  "semver",
  "serde",

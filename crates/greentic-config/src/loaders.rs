@@ -30,6 +30,8 @@ pub struct ConfigLayer {
     #[serde(default)]
     pub secrets: Option<SecretsBackendRefLayer>,
     #[serde(default)]
+    pub packs: Option<PacksLayer>,
+    #[serde(default)]
     pub dev: Option<DevLayer>,
 }
 
@@ -100,6 +102,49 @@ pub struct SecretsBackendRefLayer {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PacksLayer {
+    #[serde(default)]
+    pub source: Option<PackSourceLayer>,
+    #[serde(default)]
+    pub cache_dir: Option<PathBuf>,
+    #[serde(default)]
+    pub index_cache_ttl_secs: Option<u64>,
+    #[serde(default)]
+    pub trust: Option<PackTrustLayer>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PackSourceLayer {
+    LocalIndex {
+        #[serde(default)]
+        path: Option<PathBuf>,
+    },
+    HttpIndex {
+        #[serde(default)]
+        url: Option<String>,
+    },
+    OciRegistry {
+        #[serde(default)]
+        reference: Option<String>,
+    },
+}
+
+impl Default for PackSourceLayer {
+    fn default() -> Self {
+        Self::LocalIndex { path: None }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct PackTrustLayer {
+    #[serde(default)]
+    pub public_keys: Option<Vec<String>>,
+    #[serde(default)]
+    pub require_signatures: Option<bool>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct DevLayer {
     #[serde(default)]
     pub default_env: Option<EnvId>,
@@ -141,6 +186,7 @@ pub fn default_layer(root: &Path, defaults: &DefaultPaths) -> ConfigLayer {
             kind: Some("none".to_string()),
             reference: None,
         }),
+        packs: None,
         dev: None,
     }
 }

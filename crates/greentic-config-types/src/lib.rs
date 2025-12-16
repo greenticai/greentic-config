@@ -25,6 +25,8 @@ pub struct GreenticConfig {
     pub schema_version: ConfigVersion,
     pub environment: EnvironmentConfig,
     pub paths: PathsConfig,
+    #[serde(default)]
+    pub packs: Option<PacksConfig>,
     pub runtime: RuntimeConfig,
     pub telemetry: TelemetryConfig,
     pub network: NetworkConfig,
@@ -59,6 +61,32 @@ pub struct PathsConfig {
     pub state_dir: PathBuf,
     pub cache_dir: PathBuf,
     pub logs_dir: PathBuf,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PacksConfig {
+    pub source: PackSourceConfig,
+    pub cache_dir: PathBuf,
+    #[serde(default)]
+    pub index_cache_ttl_secs: Option<u64>,
+    #[serde(default)]
+    pub trust: Option<PackTrustConfig>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum PackSourceConfig {
+    LocalIndex { path: PathBuf },
+    HttpIndex { url: String },
+    OciRegistry { reference: String },
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PackTrustConfig {
+    #[serde(default)]
+    pub public_keys: Vec<String>,
+    #[serde(default)]
+    pub require_signatures: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -190,6 +218,18 @@ state_dir = "/workspace/.greentic"
 cache_dir = "/workspace/.greentic/cache"
 logs_dir = "/workspace/.greentic/logs"
 
+[packs]
+cache_dir = "/workspace/.greentic/cache/packs"
+index_cache_ttl_secs = 3600
+
+[packs.source]
+type = "local_index"
+path = "/workspace/.greentic/packs/index.json"
+
+[packs.trust]
+public_keys = ["/keys/key1.pem", "/keys/key2.pem"]
+require_signatures = true
+
 [runtime]
 max_concurrency = 8
 task_timeout_ms = 30000
@@ -237,6 +277,12 @@ default_team = "devex"
                 "state_dir": "/workspace/.greentic",
                 "cache_dir": "/workspace/.greentic/cache",
                 "logs_dir": "/workspace/.greentic/logs"
+            },
+            "packs": {
+                "cache_dir": "/workspace/.greentic/cache/packs",
+                "index_cache_ttl_secs": 3600,
+                "source": {"type": "http_index", "url": "https://example.com/index.json"},
+                "trust": {"public_keys": ["inline-key", "/keys/key.pem"], "require_signatures": true}
             },
             "runtime": {"max_concurrency": 4, "task_timeout_ms": 120000, "shutdown_grace_ms": 1000},
             "telemetry": {"enabled": true, "exporter": "stdout", "sampling": 1.0},

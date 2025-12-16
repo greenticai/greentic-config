@@ -1,11 +1,11 @@
 use crate::ProvenanceMap;
 use crate::loaders::ConfigLayer;
-use crate::loaders::{EnvironmentLayer, default_env_id};
+use crate::loaders::{EnvironmentLayer, PackSourceLayer, PacksLayer, default_env_id};
 use crate::paths::DefaultPaths;
 use greentic_config_types::{
     ConfigSource, ConfigVersion, DevConfig, EnvironmentConfig, GreenticConfig, NetworkConfig,
-    PathsConfig, ProvenancePath, RuntimeConfig, SecretsBackendRefConfig, TelemetryConfig,
-    TelemetryExporterKind, TlsMode,
+    PackSourceConfig, PackTrustConfig, PacksConfig, PathsConfig, ProvenancePath, RuntimeConfig,
+    SecretsBackendRefConfig, TelemetryConfig, TelemetryExporterKind, TlsMode,
 };
 use std::path::PathBuf;
 
@@ -204,6 +204,46 @@ impl MergeState {
             );
         }
 
+        if let Some(packs) = layer.packs {
+            let target = self.acc.packs.get_or_insert_with(Default::default);
+            set_field(
+                &mut target.cache_dir,
+                packs.cache_dir,
+                &mut self.provenance,
+                "packs.cache_dir",
+                &source,
+            );
+            set_field(
+                &mut target.index_cache_ttl_secs,
+                packs.index_cache_ttl_secs,
+                &mut self.provenance,
+                "packs.index_cache_ttl_secs",
+                &source,
+            );
+            if let Some(source_layer) = packs.source {
+                target.source = Some(source_layer.clone());
+                self.provenance
+                    .insert(ProvenancePath("packs.source".into()), source.clone());
+            }
+            if let Some(trust) = packs.trust {
+                let trust_target = target.trust.get_or_insert_with(Default::default);
+                set_field(
+                    &mut trust_target.public_keys,
+                    trust.public_keys,
+                    &mut self.provenance,
+                    "packs.trust.public_keys",
+                    &source,
+                );
+                set_field(
+                    &mut trust_target.require_signatures,
+                    trust.require_signatures,
+                    &mut self.provenance,
+                    "packs.trust.require_signatures",
+                    &source,
+                );
+            }
+        }
+
         if let Some(dev) = layer.dev {
             let target = self.acc.dev.get_or_insert_with(Default::default);
             set_field(
@@ -320,6 +360,12 @@ impl MergeState {
             reference: secrets_layer.reference,
         };
 
+        let packs_layer = self.acc.packs.take().unwrap_or_default();
+        let default_pack_index = default_pack_index_path(&paths, defaults);
+        let (packs, mut pack_warnings) =
+            finalize_packs(packs_layer, &paths, &default_pack_index, defaults)?;
+        self.warnings.append(&mut pack_warnings);
+
         let dev = self.acc.dev.take().and_then(|dev_layer| {
             let env = dev_layer
                 .default_env
@@ -337,6 +383,7 @@ impl MergeState {
             schema_version,
             environment,
             paths,
+            packs: Some(packs),
             runtime,
             telemetry,
             network,
@@ -394,4 +441,72 @@ fn parse_tls_mode(raw: Option<String>) -> (TlsMode, Option<String>) {
             Some(format!("Unknown TLS mode '{other}', defaulting to system")),
         ),
     }
+}
+
+fn finalize_packs(
+    packs_layer: PacksLayer,
+    paths: &PathsConfig,
+    default_index_path: &std::path::Path,
+    defaults: &DefaultPaths,
+) -> anyhow::Result<(PacksConfig, Vec<String>)> {
+    let cache_dir = make_absolute(
+        packs_layer
+            .cache_dir
+            .unwrap_or_else(|| paths.cache_dir.join("packs")),
+        defaults,
+    );
+
+    let (source, source_warnings) =
+        resolve_pack_source(packs_layer.source, default_index_path, defaults)?;
+
+    let trust = packs_layer.trust.map(|trust_layer| PackTrustConfig {
+        public_keys: trust_layer.public_keys.unwrap_or_default(),
+        require_signatures: trust_layer.require_signatures.unwrap_or(false),
+    });
+
+    let packs = PacksConfig {
+        source,
+        cache_dir,
+        index_cache_ttl_secs: packs_layer.index_cache_ttl_secs,
+        trust,
+    };
+
+    Ok((packs, source_warnings))
+}
+
+fn resolve_pack_source(
+    source_layer: Option<PackSourceLayer>,
+    default_index_path: &std::path::Path,
+    defaults: &DefaultPaths,
+) -> anyhow::Result<(PackSourceConfig, Vec<String>)> {
+    let source = match source_layer.unwrap_or_default() {
+        PackSourceLayer::LocalIndex { path } => PackSourceConfig::LocalIndex {
+            path: make_absolute(
+                path.unwrap_or_else(|| default_index_path.to_path_buf()),
+                defaults,
+            ),
+        },
+        PackSourceLayer::HttpIndex { url } => {
+            let url =
+                url.ok_or_else(|| anyhow::anyhow!("packs.source.url is required for http_index"))?;
+            PackSourceConfig::HttpIndex { url }
+        }
+        PackSourceLayer::OciRegistry { reference } => {
+            let reference = reference.ok_or_else(|| {
+                anyhow::anyhow!("packs.source.reference is required for oci_registry")
+            })?;
+            PackSourceConfig::OciRegistry { reference }
+        }
+    };
+    Ok((source, Vec::new()))
+}
+
+fn default_pack_index_path(paths: &PathsConfig, defaults: &DefaultPaths) -> PathBuf {
+    let state_index = paths.state_dir.join("packs").join("index.json");
+    let candidate = if state_index.as_os_str().is_empty() {
+        paths.greentic_root.join("packs").join("index.json")
+    } else {
+        state_index
+    };
+    make_absolute(candidate, defaults)
 }
