@@ -1,4 +1,6 @@
 name: Check crates (package dry-run)
+permissions:
+  contents: read
 
 on:
   pull_request:
