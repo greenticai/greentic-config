@@ -8,6 +8,7 @@ Enterprise configuration loader for Greentic hosts. This crate resolves configur
 - Provenance tracking for every resolved field.
 - Validation hooks for dev-only fields, path sanity, and unsafe combinations.
 - Explain output (string/JSON) for operators.
+- Deployer defaults resolved here so deploy tools never hard-code routing domains.
 
 ## Services and events mapping
 - Services endpoints (e.g., `services.events.url`) live in `greentic-config-types`; resolver applies precedence and exposes provenance.
@@ -17,3 +18,7 @@ Enterprise configuration loader for Greentic hosts. This crate resolves configur
 ## Status
 - Schema and loader implemented; CLI binary behind the `cli` feature (`greentic-config show|explain|validate`).
 - Defaults are non-secret and filesystem/network safe.
+
+## Deployer defaults
+- `deployer.base_domain` defaults to `deploy.greentic.ai` and is used when generating deployment URLs / routing domains.
+- Provenance is tracked like other fields; override via config layers instead of baking domains into deployer code.

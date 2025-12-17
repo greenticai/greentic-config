@@ -1,12 +1,15 @@
 use crate::ProvenanceMap;
 use crate::loaders::ConfigLayer;
-use crate::loaders::{EnvironmentLayer, PackSourceLayer, PacksLayer, default_env_id};
+use crate::loaders::{
+    DEFAULT_DEPLOYER_BASE_DOMAIN, EnvironmentLayer, PackSourceLayer, PacksLayer, default_env_id,
+};
 use crate::paths::DefaultPaths;
 use greentic_config_types::{
-    BackoffConfig, ConfigSource, ConfigVersion, DevConfig, EnvironmentConfig, EventsConfig,
-    GreenticConfig, NetworkConfig, PackSourceConfig, PackTrustConfig, PacksConfig, PathsConfig,
-    ProvenancePath, ReconnectConfig, RuntimeConfig, SecretsBackendRefConfig, ServiceEndpointConfig,
-    ServicesConfig, TelemetryConfig, TelemetryExporterKind, TlsMode,
+    BackoffConfig, ConfigSource, ConfigVersion, DeployerConfig, DeployerProviderDefaults,
+    DevConfig, EnvironmentConfig, EventsConfig, GreenticConfig, NetworkConfig, PackSourceConfig,
+    PackTrustConfig, PacksConfig, PathsConfig, ProvenancePath, ReconnectConfig, RuntimeConfig,
+    SecretsBackendRefConfig, ServiceEndpointConfig, ServicesConfig, TelemetryConfig,
+    TelemetryExporterKind, TlsMode,
 };
 use std::path::PathBuf;
 
@@ -214,6 +217,24 @@ impl MergeState {
             );
         }
 
+        if let Some(deployer) = layer.deployer {
+            let target = self.acc.deployer.get_or_insert_with(Default::default);
+            set_field(
+                &mut target.base_domain,
+                deployer.base_domain,
+                &mut self.provenance,
+                "deployer.base_domain",
+                &source,
+            );
+            set_field(
+                &mut target.provider,
+                deployer.provider,
+                &mut self.provenance,
+                "deployer.provider",
+                &source,
+            );
+        }
+
         if let Some(secrets) = layer.secrets {
             let target = self.acc.secrets.get_or_insert_with(Default::default);
             set_field(
@@ -414,6 +435,21 @@ impl MergeState {
             read_timeout_ms: network_layer.read_timeout_ms,
         };
 
+        let deployer_layer = self.acc.deployer.take().unwrap_or_default();
+        let deployer = Some(DeployerConfig {
+            base_domain: Some(
+                deployer_layer
+                    .base_domain
+                    .unwrap_or_else(|| DEFAULT_DEPLOYER_BASE_DOMAIN.to_string()),
+            ),
+            provider: deployer_layer
+                .provider
+                .map(|provider| DeployerProviderDefaults {
+                    provider_kind: provider.provider_kind,
+                    region: provider.region,
+                }),
+        });
+
         let secrets_layer = self.acc.secrets.take().unwrap_or_default();
         let secrets = SecretsBackendRefConfig {
             kind: secrets_layer.kind.unwrap_or_else(|| "none".into()),
@@ -449,6 +485,7 @@ impl MergeState {
             runtime,
             telemetry,
             network,
+            deployer,
             secrets,
             dev,
         };

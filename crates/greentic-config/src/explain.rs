@@ -48,6 +48,17 @@ pub fn explain(
             "network.tls_mode".into()
         )))
     ));
+    if let Some(deployer) = &config.deployer
+        && let Some(base_domain) = &deployer.base_domain
+    {
+        lines.push(format!(
+            "- deployer.base_domain: {} ({})",
+            base_domain,
+            render_source(provenance.get(&greentic_config_types::ProvenancePath(
+                "deployer.base_domain".into()
+            )))
+        ));
+    }
     if let Some(services) = &config.services
         && let Some(events) = &services.events
     {

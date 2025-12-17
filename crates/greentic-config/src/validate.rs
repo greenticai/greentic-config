@@ -22,6 +22,8 @@ pub enum ValidationError {
     EventsBackoffMax { max: u64, initial: u64 },
     #[error("events backoff.multiplier must be finite and >= 1.0 (got {0})")]
     EventsBackoffMultiplier(f64),
+    #[error("deployer.base_domain must be a valid DNS name (got {0})")]
+    DeployerBaseDomain(String),
 }
 
 pub fn validate_config(
@@ -87,6 +89,12 @@ pub fn validate_config(
         validate_backoff(backoff)?;
     }
 
+    if let Some(deployer) = &config.deployer
+        && let Some(base_domain) = &deployer.base_domain
+    {
+        validate_base_domain(base_domain)?;
+    }
+
     Ok(warnings)
 }
 
@@ -147,5 +155,33 @@ fn validate_backoff(backoff: &BackoffConfig) -> Result<(), ValidationError> {
     {
         return Err(ValidationError::EventsBackoffMultiplier(multiplier));
     }
+    Ok(())
+}
+
+fn validate_base_domain(domain: &str) -> Result<(), ValidationError> {
+    let trimmed = domain.trim();
+    if trimmed.is_empty()
+        || trimmed.contains("://")
+        || trimmed.contains('/')
+        || trimmed.contains(' ')
+    {
+        return Err(ValidationError::DeployerBaseDomain(domain.to_string()));
+    }
+
+    let labels = trimmed.split('.').collect::<Vec<_>>();
+    if labels.iter().any(|label| label.is_empty()) {
+        return Err(ValidationError::DeployerBaseDomain(domain.to_string()));
+    }
+
+    for label in labels {
+        if label.len() > 63
+            || label.starts_with('-')
+            || label.ends_with('-')
+            || !label.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')
+        {
+            return Err(ValidationError::DeployerBaseDomain(domain.to_string()));
+        }
+    }
+
     Ok(())
 }

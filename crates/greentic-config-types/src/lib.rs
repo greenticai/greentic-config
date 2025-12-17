@@ -36,6 +36,8 @@ pub struct GreenticConfig {
     pub runtime: RuntimeConfig,
     pub telemetry: TelemetryConfig,
     pub network: NetworkConfig,
+    #[serde(default)]
+    pub deployer: Option<DeployerConfig>,
     pub secrets: SecretsBackendRefConfig,
     pub dev: Option<DevConfig>,
 }
@@ -218,6 +220,23 @@ pub enum TlsMode {
     Strict,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct DeployerConfig {
+    /// Default domain used when generating deployment URLs / routing domains.
+    #[serde(default)]
+    pub base_domain: Option<String>,
+    #[serde(default)]
+    pub provider: Option<DeployerProviderDefaults>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
+pub struct DeployerProviderDefaults {
+    #[serde(default)]
+    pub provider_kind: Option<String>,
+    #[serde(default)]
+    pub region: Option<String>,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct SecretsBackendRefConfig {
     #[serde(default = "default_backend_kind")]
@@ -311,6 +330,13 @@ tls_mode = "system"
 connect_timeout_ms = 1000
 read_timeout_ms = 2000
 
+[deployer]
+base_domain = "deploy.greentic.ai"
+
+[deployer.provider]
+provider_kind = "aws"
+region = "us-west-2"
+
 [secrets]
 kind = "vault"
 reference = "ops"
@@ -361,6 +387,7 @@ default_team = "devex"
             "runtime": {"max_concurrency": 4, "task_timeout_ms": 120000, "shutdown_grace_ms": 1000},
             "telemetry": {"enabled": true, "exporter": "stdout", "sampling": 1.0},
             "network": {"tls_mode": "system"},
+            "deployer": {"base_domain": "deploy.greentic.ai", "provider": {"provider_kind": "gcp", "region": "europe-west1"}},
             "secrets": {"kind": "none"},
             "dev": {"default_env": "dev", "default_tenant": "acme"}
         }"#,

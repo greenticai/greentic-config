@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 const ENV_PREFIX: &str = "GREENTIC_";
+pub const DEFAULT_DEPLOYER_BASE_DOMAIN: &str = "deploy.greentic.ai";
 
 #[derive(Debug, Clone, Copy)]
 pub enum ConfigFileFormat {
@@ -31,6 +32,8 @@ pub struct ConfigLayer {
     pub telemetry: Option<TelemetryLayer>,
     #[serde(default)]
     pub network: Option<NetworkLayer>,
+    #[serde(default)]
+    pub deployer: Option<DeployerLayer>,
     #[serde(default)]
     pub secrets: Option<SecretsBackendRefLayer>,
     #[serde(default)]
@@ -140,6 +143,22 @@ pub struct NetworkLayer {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct DeployerLayer {
+    #[serde(default)]
+    pub base_domain: Option<String>,
+    #[serde(default)]
+    pub provider: Option<DeployerProviderDefaultsLayer>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct DeployerProviderDefaultsLayer {
+    #[serde(default)]
+    pub provider_kind: Option<String>,
+    #[serde(default)]
+    pub region: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct SecretsBackendRefLayer {
     #[serde(default)]
     pub kind: Option<String>,
@@ -240,6 +259,10 @@ pub fn default_layer(root: &Path, defaults: &DefaultPaths) -> ConfigLayer {
             tls_mode: Some("system".to_string()),
             connect_timeout_ms: None,
             read_timeout_ms: None,
+        }),
+        deployer: Some(DeployerLayer {
+            base_domain: Some(DEFAULT_DEPLOYER_BASE_DOMAIN.to_string()),
+            provider: None,
         }),
         secrets: Some(SecretsBackendRefLayer {
             kind: Some("none".to_string()),

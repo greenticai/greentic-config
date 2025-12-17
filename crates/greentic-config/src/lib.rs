@@ -108,8 +108,8 @@ impl Default for ConfigResolver {
 mod tests {
     use super::*;
     use crate::loaders::{
-        BackoffLayer, ConfigLayer, EnvironmentLayer, EventsLayer, ServiceEndpointLayer,
-        ServicesLayer,
+        BackoffLayer, ConfigLayer, DEFAULT_DEPLOYER_BASE_DOMAIN, DeployerLayer, EnvironmentLayer,
+        EventsLayer, ServiceEndpointLayer, ServicesLayer,
     };
     use greentic_config_types::PackSourceConfig;
     use greentic_types::ConnectionKind;
@@ -447,5 +447,106 @@ mod tests {
             validation,
             Err(validate::ValidationError::EventsBackoffMax { .. })
         ));
+    }
+
+    #[test]
+    fn deployer_base_domain_defaults_and_validation() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let default_paths = DefaultPaths::from_root(&root);
+
+        let merged = merge::MergeState::new(
+            loaders::default_layer(&root, &default_paths),
+            ConfigSource::Default,
+        );
+        let (resolved, _, _) = merged.finalize(&default_paths).unwrap();
+        assert_eq!(
+            resolved
+                .deployer
+                .as_ref()
+                .and_then(|d| d.base_domain.as_deref()),
+            Some(DEFAULT_DEPLOYER_BASE_DOMAIN)
+        );
+
+        let invalid_layer = ConfigLayer {
+            deployer: Some(DeployerLayer {
+                base_domain: Some("https://bad-domain".into()),
+                provider: None,
+            }),
+            ..Default::default()
+        };
+
+        let mut merged = merge::MergeState::new(
+            loaders::default_layer(&root, &default_paths),
+            ConfigSource::Default,
+        );
+        merged.apply(invalid_layer, ConfigSource::Project);
+        let (resolved, _, _) = merged.finalize(&default_paths).unwrap();
+        let validation = validate::validate_config(&resolved, true);
+        assert!(matches!(
+            validation,
+            Err(validate::ValidationError::DeployerBaseDomain(_))
+        ));
+    }
+
+    #[test]
+    fn deployer_base_domain_precedence_and_provenance() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let default_paths = DefaultPaths::from_root(&root);
+
+        let user_layer = ConfigLayer {
+            deployer: Some(DeployerLayer {
+                base_domain: Some("user.greentic.test".into()),
+                provider: None,
+            }),
+            ..Default::default()
+        };
+        let project_layer = ConfigLayer {
+            deployer: Some(DeployerLayer {
+                base_domain: Some("project.greentic.test".into()),
+                provider: None,
+            }),
+            ..Default::default()
+        };
+        let env_layer = ConfigLayer {
+            deployer: Some(DeployerLayer {
+                base_domain: Some("env.greentic.test".into()),
+                provider: None,
+            }),
+            ..Default::default()
+        };
+        let cli_layer = ConfigLayer {
+            deployer: Some(DeployerLayer {
+                base_domain: Some("cli.greentic.test".into()),
+                provider: None,
+            }),
+            ..Default::default()
+        };
+
+        let mut merged = merge::MergeState::new(
+            loaders::default_layer(&root, &default_paths),
+            ConfigSource::Default,
+        );
+        merged.apply(user_layer, ConfigSource::User);
+        merged.apply(project_layer, ConfigSource::Project);
+        merged.apply(env_layer, ConfigSource::Environment);
+        merged.apply(cli_layer, ConfigSource::Cli);
+
+        let (resolved, provenance, _) = merged.finalize(&default_paths).unwrap();
+        let base_domain = resolved
+            .deployer
+            .as_ref()
+            .and_then(|d| d.base_domain.as_deref())
+            .unwrap();
+        assert_eq!(base_domain, "cli.greentic.test");
+        assert_eq!(
+            provenance
+                .get(&greentic_config_types::ProvenancePath(
+                    "deployer.base_domain".into()
+                ))
+                .cloned(),
+            Some(ConfigSource::Cli)
+        );
     }
 }

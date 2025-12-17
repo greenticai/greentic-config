@@ -8,6 +8,7 @@ Schema-only types for Greentic host configuration. This crate defines the canoni
 - No secret material: only backend selection references are captured.
 - Reuses `greentic-types` for shared identifiers (e.g., `EnvId`, `DeploymentCtx`, `ConnectionKind`).
 - Shared services/events configuration: service endpoints live in `services`, reconnect/backoff knobs in `events`.
+- Deployer defaults (e.g., `deployer.base_domain`) live here so deploy tooling stays out of code defaults.
 
 ## Notes
 - Durations use millisecond suffixes (`*_ms`) with `u64` values.
@@ -32,4 +33,17 @@ initial_ms = 250
 max_ms = 30000
 multiplier = 2.0
 jitter = true
+```
+
+## Deployer defaults
+
+```toml
+[deployer]
+# Default domain used when generating deployment URLs / routing domains.
+base_domain = "deploy.greentic.ai"
+
+[deployer.provider]
+# Optional strategy hints; non-secret.
+provider_kind = "aws"
+region = "us-west-2"
 ```
