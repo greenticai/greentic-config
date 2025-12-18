@@ -71,10 +71,37 @@ pub struct PathsConfig {
     pub logs_dir: PathBuf,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServicesConfig {
     #[serde(default)]
     pub events: Option<ServiceEndpointConfig>,
+
+    // --- Additive service transport selectors (non-breaking) ---
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runner: Option<ServiceTransportConfig>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deployer: Option<ServiceTransportConfig>,
+
+    /// Transport selector for events.
+    ///
+    /// This exists alongside `services.events` for backward compatibility:
+    /// - `services.events` preserves the legacy HTTP-only endpoint shape.
+    /// - New consumers should prefer `services.events_transport`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub events_transport: Option<ServiceTransportConfig>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<ServiceTransportConfig>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publish: Option<ServiceTransportConfig>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metadata: Option<ServiceTransportConfig>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub oauth_broker: Option<ServiceTransportConfig>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -82,6 +109,32 @@ pub struct ServiceEndpointConfig {
     pub url: Url,
     #[serde(default)]
     pub headers: Option<BTreeMap<String, String>>,
+}
+
+// --- Services transport (non-secret) ---
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum ServiceTransportConfig {
+    /// Explicitly disables this service integration.
+    Noop,
+
+    /// HTTP transport with a base URL and optional headers.
+    ///
+    /// Headers are strictly for non-sensitive routing/metadata only and MUST NOT include secrets
+    /// (e.g. `Authorization`, `Cookie`, `Set-Cookie`).
+    Http {
+        url: url::Url,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        headers: Option<std::collections::BTreeMap<String, String>>,
+    },
+
+    /// NATS transport (non-secret). Auth is handled elsewhere (secrets-store), not here.
+    Nats {
+        url: url::Url,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        subject_prefix: Option<String>,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -146,6 +199,16 @@ pub struct RuntimeConfig {
     pub task_timeout_ms: Option<u64>,
     #[serde(default)]
     pub shutdown_grace_ms: Option<u64>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub admin_endpoints: Option<AdminEndpointsConfig>,
+}
+
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct AdminEndpointsConfig {
+    /// Enables sensitive admin endpoints (default: false).
+    #[serde(default)]
+    pub secrets_explain_enabled: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -286,6 +349,9 @@ cache_dir = "/workspace/.greentic/cache"
 logs_dir = "/workspace/.greentic/logs"
 
 [services]
+runner = { kind = "http", url = "https://runner.greentic.local", headers = { "x-routing-key" = "tenant-1" } }
+deployer = { kind = "nats", url = "nats://nats.greentic.local:4222", subject_prefix = "greentic" }
+metadata = { kind = "noop" }
 
 [services.events]
 url = "https://events.greentic.local"
@@ -317,6 +383,9 @@ require_signatures = true
 max_concurrency = 8
 task_timeout_ms = 30000
 shutdown_grace_ms = 5000
+
+[runtime.admin_endpoints]
+secrets_explain_enabled = true
 
 [telemetry]
 enabled = true
@@ -372,7 +441,10 @@ default_team = "devex"
                 "events": {
                     "url": "https://events.greentic.local",
                     "headers": {"x-routing-key": "tenant-1"}
-                }
+                },
+                "runner": {"kind": "http", "url": "https://runner.greentic.local", "headers": {"x-routing-key": "tenant-1"}},
+                "deployer": {"kind": "nats", "url": "nats://nats.greentic.local:4222", "subject_prefix": "greentic"},
+                "metadata": {"kind": "noop"}
             },
             "events": {
                 "reconnect": {"enabled": true, "max_retries": 10},
@@ -384,7 +456,7 @@ default_team = "devex"
                 "source": {"type": "http_index", "url": "https://example.com/index.json"},
                 "trust": {"public_keys": ["inline-key", "/keys/key.pem"], "require_signatures": true}
             },
-            "runtime": {"max_concurrency": 4, "task_timeout_ms": 120000, "shutdown_grace_ms": 1000},
+            "runtime": {"max_concurrency": 4, "task_timeout_ms": 120000, "shutdown_grace_ms": 1000, "admin_endpoints": {"secrets_explain_enabled": true}},
             "telemetry": {"enabled": true, "exporter": "stdout", "sampling": 1.0},
             "network": {"tls_mode": "system"},
             "deployer": {"base_domain": "deploy.greentic.ai", "provider": {"provider_kind": "gcp", "region": "europe-west1"}},
@@ -407,6 +479,7 @@ default_team = "devex"
         };
         let services = ServicesConfig {
             events: Some(endpoint),
+            ..Default::default()
         };
         let events = EventsConfig {
             reconnect: Some(ReconnectConfig {
@@ -433,5 +506,53 @@ default_team = "devex"
         let events_back: EventsConfig =
             serde_json::from_str(&serialized_events).expect("deserialize events");
         assert_eq!(events_back.backoff.unwrap().initial_ms, Some(100));
+    }
+
+    #[test]
+    fn backward_compat_services_events_still_deserializes() {
+        let legacy_services: ServicesConfig = toml::from_str(
+            r#"
+[events]
+url = "https://events.greentic.local"
+headers = { "x-routing-key" = "tenant-1" }
+"#,
+        )
+        .expect("deserialize legacy services.events shape");
+        assert_eq!(
+            legacy_services.events.unwrap().url.as_str(),
+            "https://events.greentic.local/"
+        );
+        assert!(legacy_services.events_transport.is_none());
+        assert!(legacy_services.runner.is_none());
+        assert!(legacy_services.deployer.is_none());
+        assert!(legacy_services.metadata.is_none());
+    }
+
+    #[test]
+    fn service_transport_config_serializes_with_kind_tags() {
+        let noop = ServiceTransportConfig::Noop;
+        let http = ServiceTransportConfig::Http {
+            url: Url::parse("https://runner.greentic.local").unwrap(),
+            headers: None,
+        };
+        let nats = ServiceTransportConfig::Nats {
+            url: Url::parse("nats://nats.greentic.local:4222").unwrap(),
+            subject_prefix: Some("greentic".to_string()),
+        };
+
+        let noop_v = serde_json::to_value(&noop).expect("json");
+        assert_eq!(noop_v, serde_json::json!({"kind": "noop"}));
+
+        let http_v = serde_json::to_value(&http).expect("json");
+        assert_eq!(
+            http_v,
+            serde_json::json!({"kind": "http", "url": "https://runner.greentic.local/"})
+        );
+
+        let nats_v = serde_json::to_value(&nats).expect("json");
+        assert_eq!(
+            nats_v,
+            serde_json::json!({"kind": "nats", "url": "nats://nats.greentic.local:4222", "subject_prefix": "greentic"})
+        );
     }
 }

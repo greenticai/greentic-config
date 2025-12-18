@@ -7,7 +7,7 @@ Schema-only types for Greentic host configuration. This crate defines the canoni
 - No filesystem, environment variable, or network IO.
 - No secret material: only backend selection references are captured.
 - Reuses `greentic-types` for shared identifiers (e.g., `EnvId`, `DeploymentCtx`, `ConnectionKind`).
-- Shared services/events configuration: service endpoints live in `services`, reconnect/backoff knobs in `events`.
+- Shared services/events configuration: service endpoints/transports live in `services`, reconnect/backoff knobs in `events`.
 - Deployer defaults (e.g., `deployer.base_domain`) live here so deploy tooling stays out of code defaults.
 
 ## Notes
@@ -18,10 +18,22 @@ Schema-only types for Greentic host configuration. This crate defines the canoni
 
 ## Services and events configuration
 
+`services.*` is for service endpoint/transport selection (HTTP/NATS/noop) and non-secret routing metadata.
+
+`network.*` is cross-cutting client/network behavior (proxy/TLS/timeouts) and should not be duplicated per-service.
+
+Admin endpoints are disabled by default and must be explicitly enabled via `runtime.admin_endpoints`.
+
 ```toml
+[services]
+runner = { kind = "http", url = "https://runner.greentic.local", headers = { "x-routing-key" = "tenant-1" } }
+deployer = { kind = "nats", url = "nats://nats.greentic.local:4222", subject_prefix = "greentic" }
+metadata = { kind = "noop" }
+
 [services.events]
 url = "https://events.greentic.local"
-# headers are non-secret metadata only
+# headers are non-secret metadata only and MUST NOT include secrets
+# (e.g. Authorization, Cookie, Set-Cookie).
 headers = { "x-routing-key" = "tenant-1" }
 
 [events.reconnect]
@@ -33,6 +45,10 @@ initial_ms = 250
 max_ms = 30000
 multiplier = 2.0
 jitter = true
+
+[runtime.admin_endpoints]
+# disabled by default
+secrets_explain_enabled = true
 ```
 
 ## Deployer defaults

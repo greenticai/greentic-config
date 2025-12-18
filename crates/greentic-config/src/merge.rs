@@ -383,6 +383,7 @@ impl MergeState {
                         url,
                         headers: evt.headers,
                     }),
+                    ..Default::default()
                 })
             })
             .transpose()?;
@@ -408,6 +409,7 @@ impl MergeState {
             max_concurrency: runtime_layer.max_concurrency,
             task_timeout_ms: runtime_layer.task_timeout_ms,
             shutdown_grace_ms: runtime_layer.shutdown_grace_ms,
+            ..Default::default()
         };
 
         let telemetry_layer = self.acc.telemetry.take().unwrap_or_default();
