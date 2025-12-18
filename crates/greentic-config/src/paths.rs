@@ -39,3 +39,11 @@ pub fn discover_project_root(start: &Path) -> Option<PathBuf> {
     }
     None
 }
+
+pub fn absolute_path(path: &Path) -> anyhow::Result<PathBuf> {
+    if path.is_absolute() {
+        return Ok(path.to_path_buf());
+    }
+    let cwd = std::env::current_dir()?;
+    Ok(cwd.join(path))
+}

@@ -1,3 +1,12 @@
+//! Enterprise-ready configuration resolver for Greentic hosts.
+//!
+//! This crate loads `GreenticConfig` (from `greentic-config-types`) from defaults, user config,
+//! project config, environment variables, and CLI overrides with strict precedence:
+//! `CLI > env > project > user > defaults`.
+//!
+//! Use `ConfigResolver::load()` for source-only provenance, or `ConfigResolver::load_detailed()` for
+//! per-leaf provenance that also includes origin (file path / env var name / `cli`).
+
 mod explain;
 mod loaders;
 mod merge;
@@ -8,12 +17,20 @@ use greentic_config_types::{ConfigSource, GreenticConfig, ProvenancePath};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-pub use explain::{ExplainReport, explain};
+pub use explain::{ExplainReport, explain, explain_detailed};
 pub use loaders::{ConfigFileFormat, ConfigLayer};
 pub use paths::{DefaultPaths, discover_project_root};
-pub use validate::{ValidationError, validate_config};
+pub use validate::{ValidationError, validate_config, validate_config_with_overrides};
 
 pub type ProvenanceMap = HashMap<ProvenancePath, ConfigSource>;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ProvenanceRecord {
+    pub source: ConfigSource,
+    pub origin: Option<String>,
+}
+
+pub type ProvenanceMapDetailed = HashMap<ProvenancePath, ProvenanceRecord>;
 
 #[derive(Debug, Clone)]
 pub struct ResolvedConfig {
@@ -22,19 +39,97 @@ pub struct ResolvedConfig {
     pub warnings: Vec<String>,
 }
 
+impl ResolvedConfig {
+    pub fn explain(&self) -> ExplainReport {
+        explain(&self.config, &self.provenance, &self.warnings)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ResolvedConfigDetailed {
+    pub config: GreenticConfig,
+    pub provenance: ProvenanceMapDetailed,
+    pub warnings: Vec<String>,
+}
+
+impl ResolvedConfigDetailed {
+    pub fn explain(&self) -> ExplainReport {
+        explain::explain_detailed(&self.config, &self.provenance, &self.warnings)
+    }
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct CliOverrides {
+    layer: ConfigLayer,
+}
+
+impl CliOverrides {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_env_id(mut self, env_id: greentic_config_types::EnvId) -> Self {
+        self.layer
+            .environment
+            .get_or_insert_with(Default::default)
+            .env_id = Some(env_id);
+        self
+    }
+
+    pub fn with_connection(mut self, connection: greentic_config_types::ConnectionKind) -> Self {
+        self.layer
+            .environment
+            .get_or_insert_with(Default::default)
+            .connection = Some(connection);
+        self
+    }
+
+    pub fn with_region(mut self, region: impl Into<String>) -> Self {
+        self.layer
+            .environment
+            .get_or_insert_with(Default::default)
+            .region = Some(region.into());
+        self
+    }
+
+    pub fn with_services_events_url(mut self, url: url::Url) -> Self {
+        self.layer
+            .services
+            .get_or_insert_with(Default::default)
+            .events
+            .get_or_insert_with(Default::default)
+            .url = Some(url);
+        self
+    }
+
+    pub fn into_layer(self) -> ConfigLayer {
+        self.layer
+    }
+}
+
+impl From<CliOverrides> for ConfigLayer {
+    fn from(value: CliOverrides) -> Self {
+        value.layer
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct ConfigResolver {
     project_root: Option<PathBuf>,
+    config_path: Option<PathBuf>,
     cli_overrides: Option<ConfigLayer>,
     allow_dev: bool,
+    allow_network: bool,
 }
 
 impl ConfigResolver {
     pub fn new() -> Self {
         Self {
             project_root: None,
+            config_path: None,
             cli_overrides: None,
             allow_dev: false,
+            allow_network: false,
         }
     }
 
@@ -50,30 +145,44 @@ impl ConfigResolver {
         self
     }
 
+    pub fn with_config_path(mut self, path: PathBuf) -> Self {
+        self.config_path = Some(path);
+        self
+    }
+
     pub fn with_cli_overrides(mut self, layer: ConfigLayer) -> Self {
         self.cli_overrides = Some(layer);
         self
     }
 
-    pub fn allow_dev(mut self, allow: bool) -> Self {
+    pub fn with_cli_overrides_typed(mut self, overrides: CliOverrides) -> Self {
+        self.cli_overrides = Some(overrides.into_layer());
+        self
+    }
+
+    pub fn with_allow_dev(mut self, allow: bool) -> Self {
         self.allow_dev = allow;
         self
     }
 
+    pub fn allow_dev(self, allow: bool) -> Self {
+        self.with_allow_dev(allow)
+    }
+
+    pub fn with_allow_network(mut self, allow: bool) -> Self {
+        self.allow_network = allow;
+        self
+    }
+
     pub fn load(&self) -> anyhow::Result<ResolvedConfig> {
-        let cwd = std::env::current_dir()?;
-        let project_root = self
-            .project_root
-            .clone()
-            .or_else(|| discover_project_root(&cwd))
-            .unwrap_or(cwd);
+        let project_root = self.resolve_project_root()?;
 
         let default_paths = DefaultPaths::from_root(&project_root);
         let mut provenance = ProvenanceMap::new();
 
         let default_layer = loaders::default_layer(&project_root, &default_paths);
         let user_layer = loaders::load_user_config()?;
-        let project_layer = loaders::load_project_config(&project_root)?;
+        let (project_layer, _) = self.load_project_layer(&project_root)?;
         let env_layer = loaders::load_env_layer();
 
         let mut merged = merge::MergeState::new(default_layer, ConfigSource::Default);
@@ -87,7 +196,11 @@ impl ConfigResolver {
         let (resolved, layer_provenance, mut merge_warnings) = merged.finalize(&default_paths)?;
         provenance.extend(layer_provenance);
 
-        let mut warnings = validate::validate_config(&resolved, self.allow_dev)?;
+        let mut warnings = validate::validate_config_with_overrides(
+            &resolved,
+            self.allow_dev,
+            self.allow_network,
+        )?;
         warnings.append(&mut merge_warnings);
 
         Ok(ResolvedConfig {
@@ -95,6 +208,90 @@ impl ConfigResolver {
             provenance,
             warnings,
         })
+    }
+
+    pub fn load_detailed(&self) -> anyhow::Result<ResolvedConfigDetailed> {
+        let project_root = self.resolve_project_root()?;
+
+        let default_paths = DefaultPaths::from_root(&project_root);
+
+        let default_layer = loaders::default_layer(&project_root, &default_paths);
+        let (user_layer, user_origin) = loaders::load_user_config_with_origin()?;
+        let (project_layer, project_origin) = self.load_project_layer(&project_root)?;
+
+        let env_layers = loaders::load_env_layers_detailed();
+
+        let mut merged = merge::MergeStateDetailed::new(
+            default_layer,
+            merge::ProvenanceCtx::new(ConfigSource::Default, Some("defaults".into())),
+        );
+        if let Some(origin) = user_origin {
+            merged.apply(
+                user_layer,
+                merge::ProvenanceCtx::new(ConfigSource::User, Some(origin.display().to_string())),
+            );
+        } else {
+            merged.apply(
+                user_layer,
+                merge::ProvenanceCtx::new(ConfigSource::User, None),
+            );
+        }
+        merged.apply(
+            project_layer,
+            merge::ProvenanceCtx::new(
+                ConfigSource::Project,
+                Some(project_origin.display().to_string()),
+            ),
+        );
+        for (layer, env_key) in env_layers {
+            merged.apply(
+                layer,
+                merge::ProvenanceCtx::new(ConfigSource::Environment, Some(env_key)),
+            );
+        }
+        if let Some(cli) = self.cli_overrides.clone() {
+            merged.apply(
+                cli,
+                merge::ProvenanceCtx::new(ConfigSource::Cli, Some("cli".into())),
+            );
+        }
+
+        let (resolved, provenance, mut merge_warnings) =
+            merged.finalize_detailed(&default_paths)?;
+        let mut warnings = validate::validate_config_with_overrides(
+            &resolved,
+            self.allow_dev,
+            self.allow_network,
+        )?;
+        warnings.append(&mut merge_warnings);
+
+        Ok(ResolvedConfigDetailed {
+            config: resolved,
+            provenance,
+            warnings,
+        })
+    }
+
+    fn resolve_project_root(&self) -> anyhow::Result<PathBuf> {
+        let cwd = std::env::current_dir()?;
+        Ok(self
+            .project_root
+            .clone()
+            .or_else(|| discover_project_root(&cwd))
+            .unwrap_or(cwd))
+    }
+
+    fn load_project_layer(
+        &self,
+        project_root: &std::path::Path,
+    ) -> anyhow::Result<(ConfigLayer, PathBuf)> {
+        match self.config_path.as_deref() {
+            Some(path) => {
+                let abs = crate::paths::absolute_path(path)?;
+                Ok((loaders::load_config_file_required(&abs)?, abs))
+            }
+            None => loaders::load_project_config_with_origin(project_root),
+        }
     }
 }
 
@@ -547,6 +744,196 @@ mod tests {
                 ))
                 .cloned(),
             Some(ConfigSource::Cli)
+        );
+    }
+
+    #[test]
+    fn explicit_config_path_replaces_project_discovery() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        std::fs::create_dir_all(root.join(".greentic")).unwrap();
+
+        std::fs::write(
+            root.join(".greentic").join("config.toml"),
+            r#"
+[environment]
+env_id = "staging"
+"#,
+        )
+        .unwrap();
+
+        let explicit_path = root.join("explicit.toml");
+        std::fs::write(
+            &explicit_path,
+            r#"
+[environment]
+env_id = "prod"
+"#,
+        )
+        .unwrap();
+
+        let resolver = ConfigResolver::new()
+            .with_project_root(root.clone())
+            .with_config_path(explicit_path.clone());
+        let (layer, origin) = resolver.load_project_layer(&root).unwrap();
+        assert_eq!(origin, crate::paths::absolute_path(&explicit_path).unwrap());
+
+        let env_id = layer.environment.unwrap().env_id.unwrap();
+        let env_json = serde_json::to_string(&env_id).unwrap();
+        assert!(env_json.contains("prod"));
+    }
+
+    #[test]
+    fn explicit_config_path_missing_is_error() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let missing = root.join("missing.toml");
+
+        let resolver = ConfigResolver::new()
+            .with_project_root(root.clone())
+            .with_config_path(missing.clone());
+        let err = resolver.load_project_layer(&root).unwrap_err();
+        let msg = err.to_string();
+        assert!(msg.contains("explicit config file not found"));
+        assert!(
+            msg.contains(
+                &crate::paths::absolute_path(&missing)
+                    .unwrap()
+                    .display()
+                    .to_string()
+            )
+        );
+    }
+
+    #[test]
+    fn detailed_precedence_prefers_cli_and_tracks_origin() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let default_paths = DefaultPaths::from_root(&root);
+
+        let base = crate::loaders::default_layer(&root, &default_paths);
+        let mut merged = crate::merge::MergeStateDetailed::new(
+            base,
+            crate::merge::ProvenanceCtx::new(ConfigSource::Default, Some("defaults".into())),
+        );
+
+        let user_layer = ConfigLayer {
+            paths: Some(crate::loaders::PathsLayer {
+                state_dir: Some(PathBuf::from("/tmp/user-state")),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        merged.apply(
+            user_layer,
+            crate::merge::ProvenanceCtx::new(ConfigSource::User, Some("/user/config.toml".into())),
+        );
+
+        let project_layer = ConfigLayer {
+            paths: Some(crate::loaders::PathsLayer {
+                state_dir: Some(PathBuf::from("/tmp/project-state")),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        merged.apply(
+            project_layer,
+            crate::merge::ProvenanceCtx::new(
+                ConfigSource::Project,
+                Some("/repo/.greentic/config.toml".into()),
+            ),
+        );
+
+        let env_layers = crate::loaders::load_env_layers_detailed_from([(
+            "GREENTIC_PATHS_STATE_DIR".to_string(),
+            "/tmp/env-state".to_string(),
+        )]);
+        for (layer, key) in env_layers {
+            merged.apply(
+                layer,
+                crate::merge::ProvenanceCtx::new(ConfigSource::Environment, Some(key)),
+            );
+        }
+
+        let cli_layer = ConfigLayer {
+            paths: Some(crate::loaders::PathsLayer {
+                state_dir: Some(PathBuf::from("/tmp/cli-state")),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        merged.apply(
+            cli_layer,
+            crate::merge::ProvenanceCtx::new(ConfigSource::Cli, Some("cli".into())),
+        );
+
+        let (resolved, provenance, _) = merged.finalize_detailed(&default_paths).unwrap();
+        assert_eq!(resolved.paths.state_dir, PathBuf::from("/tmp/cli-state"));
+        let rec = provenance
+            .get(&greentic_config_types::ProvenancePath(
+                "paths.state_dir".into(),
+            ))
+            .unwrap();
+        assert_eq!(rec.source, ConfigSource::Cli);
+        assert_eq!(rec.origin.as_deref(), Some("cli"));
+    }
+
+    #[test]
+    fn offline_telemetry_endpoint_warns_unless_allow_network() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let default_paths = DefaultPaths::from_root(&root);
+        let merged = crate::merge::MergeState::new(
+            crate::loaders::default_layer(&root, &default_paths),
+            ConfigSource::Default,
+        );
+        let (mut config, _, _) = merged.finalize(&default_paths).unwrap();
+        config.environment.connection = Some(ConnectionKind::Offline);
+        config.telemetry.enabled = true;
+        config.telemetry.endpoint = Some("https://otlp.example.com:4317".into());
+        config.telemetry.exporter = greentic_config_types::TelemetryExporterKind::Otlp;
+
+        let warnings =
+            crate::validate::validate_config_with_overrides(&config, true, false).unwrap();
+        assert!(warnings.iter().any(|w| w.contains("telemetry.endpoint")));
+
+        let warnings =
+            crate::validate::validate_config_with_overrides(&config, true, true).unwrap();
+        assert!(!warnings.iter().any(|w| w.contains("telemetry.endpoint")));
+    }
+
+    #[test]
+    fn offline_events_endpoint_error_is_suppressed_with_allow_network() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let default_paths = DefaultPaths::from_root(&root);
+        let merged = crate::merge::MergeState::new(
+            crate::loaders::default_layer(&root, &default_paths),
+            ConfigSource::Default,
+        );
+        let (mut config, _, _) = merged.finalize(&default_paths).unwrap();
+        config.environment.connection = Some(ConnectionKind::Offline);
+        config.services = Some(greentic_config_types::ServicesConfig {
+            events: Some(greentic_config_types::ServiceEndpointConfig {
+                url: Url::parse("https://events.example.com").unwrap(),
+                headers: None,
+            }),
+            ..Default::default()
+        });
+
+        let err =
+            crate::validate::validate_config_with_overrides(&config, true, false).unwrap_err();
+        assert!(matches!(
+            err,
+            crate::validate::ValidationError::EventsEndpointOffline(_)
+        ));
+
+        let warnings =
+            crate::validate::validate_config_with_overrides(&config, true, true).unwrap();
+        assert!(
+            !warnings
+                .iter()
+                .any(|w| w.contains("events endpoint") || w.contains("EventsEndpointOffline"))
         );
     }
 }

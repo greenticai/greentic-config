@@ -361,7 +361,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-config"
-version = "0.4.9"
+version = "0.4.10"
 dependencies = [
  "anyhow",
  "camino",
@@ -381,7 +381,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-config-types"
-version = "0.4.9"
+version = "0.4.10"
 dependencies = [
  "greentic-types",
  "serde",

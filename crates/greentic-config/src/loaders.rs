@@ -281,9 +281,44 @@ pub fn load_user_config() -> anyhow::Result<ConfigLayer> {
     load_config_file_if_exists(&path)
 }
 
+pub fn load_user_config_with_origin() -> anyhow::Result<(ConfigLayer, Option<PathBuf>)> {
+    let Some(dirs) = directories::ProjectDirs::from("com", "greentic", "greentic") else {
+        return Ok((ConfigLayer::default(), None));
+    };
+    let path = dirs.config_dir().join("config.toml");
+    let layer = load_config_file_if_exists(&path)?;
+    let abs = crate::paths::absolute_path(&path)?;
+    Ok((layer, Some(abs)))
+}
+
 pub fn load_project_config(project_root: &Path) -> anyhow::Result<ConfigLayer> {
     let path = project_root.join(".greentic").join("config.toml");
     load_config_file_if_exists(&path)
+}
+
+pub fn load_project_config_with_origin(
+    project_root: &Path,
+) -> anyhow::Result<(ConfigLayer, PathBuf)> {
+    let path = project_root.join(".greentic").join("config.toml");
+    let layer = load_project_config(project_root)?;
+    let abs = crate::paths::absolute_path(&path)?;
+    Ok((layer, abs))
+}
+
+pub fn load_config_file_required(path: &Path) -> anyhow::Result<ConfigLayer> {
+    let abs = crate::paths::absolute_path(path)?;
+    if !abs.exists() {
+        return Err(anyhow::anyhow!(
+            "explicit config file not found: {}\nHint: pass an existing file to --config / with_config_path()",
+            abs.display()
+        ));
+    }
+    let contents = fs::read_to_string(&abs)?;
+    let format = match abs.extension().and_then(|s| s.to_str()) {
+        Some("json") => ConfigFileFormat::Json,
+        _ => ConfigFileFormat::Toml,
+    };
+    parse_layer(&contents, format)
 }
 
 fn load_config_file_if_exists(path: &Path) -> anyhow::Result<ConfigLayer> {
@@ -494,6 +529,206 @@ pub fn load_env_layer() -> ConfigLayer {
         }
     }
     layer
+}
+
+pub fn load_env_layers_detailed() -> Vec<(ConfigLayer, String)> {
+    load_env_layers_detailed_from(std::env::vars())
+}
+
+pub fn load_env_layers_detailed_from<I>(vars: I) -> Vec<(ConfigLayer, String)>
+where
+    I: IntoIterator<Item = (String, String)>,
+{
+    let mut layers = Vec::new();
+    for (key, value) in vars {
+        if !key.starts_with(ENV_PREFIX) {
+            continue;
+        }
+        if let Some(layer) = env_var_to_layer(&key, &value) {
+            layers.push((layer, key));
+        }
+    }
+    layers
+}
+
+fn env_var_to_layer(key: &str, value: &str) -> Option<ConfigLayer> {
+    let mut layer = ConfigLayer::default();
+    match key {
+        "GREENTIC_SCHEMA_VERSION" => layer.schema_version = Some(ConfigVersion(value.to_string())),
+        "GREENTIC_ENVIRONMENT_ENV_ID" => {
+            layer
+                .environment
+                .get_or_insert_with(Default::default)
+                .env_id = parse_string_as::<EnvId>(value)
+        }
+        "GREENTIC_ENVIRONMENT_DEPLOYMENT" => {
+            layer
+                .environment
+                .get_or_insert_with(Default::default)
+                .deployment = parse_string_as::<DeploymentCtx>(value)
+        }
+        "GREENTIC_ENVIRONMENT_CONNECTION" => {
+            layer
+                .environment
+                .get_or_insert_with(Default::default)
+                .connection = parse_string_as::<ConnectionKind>(value)
+        }
+        "GREENTIC_ENVIRONMENT_REGION" => {
+            layer
+                .environment
+                .get_or_insert_with(Default::default)
+                .region = Some(value.to_string())
+        }
+        "GREENTIC_PATHS_GREENTIC_ROOT" => {
+            layer
+                .paths
+                .get_or_insert_with(Default::default)
+                .greentic_root = Some(PathBuf::from(value))
+        }
+        "GREENTIC_PATHS_STATE_DIR" => {
+            layer.paths.get_or_insert_with(Default::default).state_dir = Some(PathBuf::from(value))
+        }
+        "GREENTIC_PATHS_CACHE_DIR" => {
+            layer.paths.get_or_insert_with(Default::default).cache_dir = Some(PathBuf::from(value))
+        }
+        "GREENTIC_PATHS_LOGS_DIR" => {
+            layer.paths.get_or_insert_with(Default::default).logs_dir = Some(PathBuf::from(value))
+        }
+        "GREENTIC_SERVICES_EVENTS_URL" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .events
+                .get_or_insert_with(Default::default)
+                .url = parse_string_as::<url::Url>(value)
+        }
+        "GREENTIC_RUNTIME_MAX_CONCURRENCY" => {
+            layer
+                .runtime
+                .get_or_insert_with(Default::default)
+                .max_concurrency = parse_u32(value)
+        }
+        "GREENTIC_RUNTIME_TASK_TIMEOUT_MS" => {
+            layer
+                .runtime
+                .get_or_insert_with(Default::default)
+                .task_timeout_ms = parse_u64(value)
+        }
+        "GREENTIC_RUNTIME_SHUTDOWN_GRACE_MS" => {
+            layer
+                .runtime
+                .get_or_insert_with(Default::default)
+                .shutdown_grace_ms = parse_u64(value)
+        }
+        "GREENTIC_TELEMETRY_ENABLED" => {
+            layer.telemetry.get_or_insert_with(Default::default).enabled = parse_bool(value)
+        }
+        "GREENTIC_TELEMETRY_EXPORTER" => {
+            layer
+                .telemetry
+                .get_or_insert_with(Default::default)
+                .exporter = Some(value.to_lowercase())
+        }
+        "GREENTIC_TELEMETRY_ENDPOINT" => {
+            layer
+                .telemetry
+                .get_or_insert_with(Default::default)
+                .endpoint = Some(value.to_string())
+        }
+        "GREENTIC_TELEMETRY_SAMPLING" => {
+            layer
+                .telemetry
+                .get_or_insert_with(Default::default)
+                .sampling = parse_f32(value)
+        }
+        "GREENTIC_NETWORK_PROXY_URL" => {
+            layer.network.get_or_insert_with(Default::default).proxy_url = Some(value.to_string())
+        }
+        "GREENTIC_NETWORK_TLS_MODE" => {
+            layer.network.get_or_insert_with(Default::default).tls_mode = Some(value.to_lowercase())
+        }
+        "GREENTIC_NETWORK_CONNECT_TIMEOUT_MS" => {
+            layer
+                .network
+                .get_or_insert_with(Default::default)
+                .connect_timeout_ms = parse_u64(value)
+        }
+        "GREENTIC_NETWORK_READ_TIMEOUT_MS" => {
+            layer
+                .network
+                .get_or_insert_with(Default::default)
+                .read_timeout_ms = parse_u64(value)
+        }
+        "GREENTIC_SECRETS_KIND" => {
+            layer.secrets.get_or_insert_with(Default::default).kind = Some(value.to_string())
+        }
+        "GREENTIC_SECRETS_REFERENCE" => {
+            layer.secrets.get_or_insert_with(Default::default).reference = Some(value.to_string())
+        }
+        "GREENTIC_DEV_DEFAULT_ENV" => {
+            layer.dev.get_or_insert_with(Default::default).default_env =
+                parse_string_as::<EnvId>(value)
+        }
+        "GREENTIC_DEV_DEFAULT_TENANT" => {
+            layer
+                .dev
+                .get_or_insert_with(Default::default)
+                .default_tenant = Some(value.to_string())
+        }
+        "GREENTIC_DEV_DEFAULT_TEAM" => {
+            layer.dev.get_or_insert_with(Default::default).default_team = Some(value.to_string())
+        }
+        "GREENTIC_EVENTS_RECONNECT_ENABLED" => {
+            layer
+                .events
+                .get_or_insert_with(Default::default)
+                .reconnect
+                .get_or_insert_with(Default::default)
+                .enabled = parse_bool(value)
+        }
+        "GREENTIC_EVENTS_RECONNECT_MAX_RETRIES" => {
+            layer
+                .events
+                .get_or_insert_with(Default::default)
+                .reconnect
+                .get_or_insert_with(Default::default)
+                .max_retries = parse_u32(value)
+        }
+        "GREENTIC_EVENTS_BACKOFF_INITIAL_MS" => {
+            layer
+                .events
+                .get_or_insert_with(Default::default)
+                .backoff
+                .get_or_insert_with(Default::default)
+                .initial_ms = parse_u64(value)
+        }
+        "GREENTIC_EVENTS_BACKOFF_MAX_MS" => {
+            layer
+                .events
+                .get_or_insert_with(Default::default)
+                .backoff
+                .get_or_insert_with(Default::default)
+                .max_ms = parse_u64(value)
+        }
+        "GREENTIC_EVENTS_BACKOFF_MULTIPLIER" => {
+            layer
+                .events
+                .get_or_insert_with(Default::default)
+                .backoff
+                .get_or_insert_with(Default::default)
+                .multiplier = parse_f32(value).map(|v| v as f64)
+        }
+        "GREENTIC_EVENTS_BACKOFF_JITTER" => {
+            layer
+                .events
+                .get_or_insert_with(Default::default)
+                .backoff
+                .get_or_insert_with(Default::default)
+                .jitter = parse_bool(value)
+        }
+        _ => return None,
+    }
+    Some(layer)
 }
 
 fn parse_string_as<T: for<'de> Deserialize<'de>>(value: &str) -> Option<T> {

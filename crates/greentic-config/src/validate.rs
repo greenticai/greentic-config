@@ -30,6 +30,14 @@ pub fn validate_config(
     config: &GreenticConfig,
     allow_dev: bool,
 ) -> Result<Vec<String>, ValidationError> {
+    validate_config_with_overrides(config, allow_dev, false)
+}
+
+pub fn validate_config_with_overrides(
+    config: &GreenticConfig,
+    allow_dev: bool,
+    allow_network: bool,
+) -> Result<Vec<String>, ValidationError> {
     let mut warnings = Vec::new();
 
     if let Some(dev) = &config.dev {
@@ -65,12 +73,24 @@ pub fn validate_config(
             .push("telemetry.enabled=true but exporter=none; telemetry will be disabled".into());
     }
 
+    if !allow_network
+        && matches!(config.environment.connection, Some(ConnectionKind::Offline))
+        && telemetry_endpoint_is_non_loopback(config.telemetry.endpoint.as_deref())
+    {
+        warnings.push(
+            "environment.connection=offline but telemetry.endpoint is non-loopback; telemetry may attempt outbound network"
+                .into(),
+        );
+    }
+
     if let Some(packs) = &config.packs {
         ensure_absolute(&packs.cache_dir)?;
         match &packs.source {
             PackSourceConfig::LocalIndex { path } => ensure_absolute(path)?,
             PackSourceConfig::HttpIndex { .. } | PackSourceConfig::OciRegistry { .. } => {
-                if matches!(config.environment.connection, Some(ConnectionKind::Offline)) {
+                if !allow_network
+                    && matches!(config.environment.connection, Some(ConnectionKind::Offline))
+                {
                     return Err(ValidationError::PacksSourceOffline);
                 }
             }
@@ -79,6 +99,7 @@ pub fn validate_config(
 
     if let Some(services) = &config.services
         && let Some(events) = &services.events
+        && !allow_network
     {
         validate_events_endpoint(events, &config.environment.connection)?;
     }
@@ -137,6 +158,16 @@ fn is_local_url(url: &url::Url) -> bool {
             .unwrap_or(false),
         None => false,
     }
+}
+
+fn telemetry_endpoint_is_non_loopback(endpoint: Option<&str>) -> bool {
+    let Some(raw) = endpoint else {
+        return false;
+    };
+    let Ok(url) = url::Url::parse(raw) else {
+        return true;
+    };
+    !is_local_url(&url)
 }
 
 fn validate_backoff(backoff: &BackoffConfig) -> Result<(), ValidationError> {

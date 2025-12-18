@@ -1,4 +1,4 @@
-use crate::ProvenanceMap;
+use crate::{ProvenanceMap, ProvenanceMapDetailed, ProvenanceRecord};
 use greentic_config_types::{ConfigSource, GreenticConfig};
 use serde::Serialize;
 
@@ -6,6 +6,17 @@ use serde::Serialize;
 pub struct ExplainReport {
     pub text: String,
     pub json: serde_json::Value,
+}
+
+impl ExplainReport {
+    #[allow(clippy::inherent_to_string)]
+    pub fn to_string(&self) -> String {
+        self.text.clone()
+    }
+
+    pub fn to_json(&self) -> serde_json::Value {
+        self.json.clone()
+    }
 }
 
 pub fn explain(
@@ -110,6 +121,61 @@ pub fn explain(
     }
 }
 
+pub fn explain_detailed(
+    config: &GreenticConfig,
+    provenance: &ProvenanceMapDetailed,
+    warnings: &[String],
+) -> ExplainReport {
+    let mut lines = Vec::new();
+    lines.push("Configuration:".to_string());
+    lines.push(format!(
+        "- schema_version: {}",
+        config.schema_version.0.as_str()
+    ));
+    lines.push(format!(
+        "- environment.env_id: {:?} ({})",
+        config.environment.env_id,
+        render_record(provenance.get(&greentic_config_types::ProvenancePath(
+            "environment.env_id".into()
+        )))
+    ));
+    lines.push(format!(
+        "- paths.state_dir: {} ({})",
+        config.paths.state_dir.display(),
+        render_record(provenance.get(&greentic_config_types::ProvenancePath(
+            "paths.state_dir".into()
+        )))
+    ));
+    if let Some(services) = &config.services
+        && let Some(events) = &services.events
+    {
+        lines.push(format!(
+            "- services.events.url: {} ({})",
+            events.url,
+            render_record(provenance.get(&greentic_config_types::ProvenancePath(
+                "services.events.url".into()
+            )))
+        ));
+    }
+    if !warnings.is_empty() {
+        lines.push("Warnings:".into());
+        for warning in warnings {
+            lines.push(format!("  - {warning}"));
+        }
+    }
+
+    let json = serde_json::json!({
+        "config": config,
+        "provenance": provenance_as_json_detailed(provenance),
+        "warnings": warnings,
+    });
+
+    ExplainReport {
+        text: lines.join("\n"),
+        json,
+    }
+}
+
 fn render_source(source: Option<&ConfigSource>) -> String {
     match source {
         Some(ConfigSource::Default) => "default".into(),
@@ -121,6 +187,17 @@ fn render_source(source: Option<&ConfigSource>) -> String {
     }
 }
 
+fn render_record(record: Option<&ProvenanceRecord>) -> String {
+    let Some(rec) = record else {
+        return "unknown".into();
+    };
+    let source = render_source(Some(&rec.source));
+    match rec.origin.as_deref() {
+        Some(origin) => format!("{source}@{origin}"),
+        None => source,
+    }
+}
+
 fn provenance_as_json(provenance: &ProvenanceMap) -> serde_json::Value {
     let map: serde_json::Map<String, serde_json::Value> = provenance
         .iter()
@@ -128,6 +205,19 @@ fn provenance_as_json(provenance: &ProvenanceMap) -> serde_json::Value {
             (
                 k.0.clone(),
                 serde_json::Value::String(render_source(Some(v))),
+            )
+        })
+        .collect();
+    serde_json::Value::Object(map)
+}
+
+fn provenance_as_json_detailed(provenance: &ProvenanceMapDetailed) -> serde_json::Value {
+    let map: serde_json::Map<String, serde_json::Value> = provenance
+        .iter()
+        .map(|(k, v)| {
+            (
+                k.0.clone(),
+                serde_json::json!({"source": render_source(Some(&v.source)), "origin": v.origin}),
             )
         })
         .collect();
