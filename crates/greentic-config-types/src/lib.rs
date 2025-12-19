@@ -71,6 +71,7 @@ pub struct PathsConfig {
     pub logs_dir: PathBuf,
 }
 
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServicesConfig {
     #[serde(default)]
@@ -95,6 +96,9 @@ pub struct ServicesConfig {
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publish: Option<ServiceDefinitionConfig>,
+
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub store: Option<ServiceDefinitionConfig>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<ServiceDefinitionConfig>,
@@ -561,6 +565,14 @@ default_team = "devex"
         assert_eq!(metrics.bind_addr.as_deref(), Some("127.0.0.1"));
         assert_eq!(metrics.port, Some(9090));
         assert_eq!(metrics.path.as_deref(), Some("/metrics"));
+        assert!(
+            config_back
+                .services
+                .as_ref()
+                .and_then(|s| s.store.as_ref())
+                .is_none(),
+            "store should remain absent when omitted"
+        );
     }
 
     #[test]
@@ -581,7 +593,9 @@ default_team = "devex"
                     "headers": {"x-routing-key": "tenant-1"}
                 },
                 "runner": {
-                    "transport": {"kind": "http", "url": "https://runner.greentic.local", "headers": {"x-routing-key": "tenant-1"}},
+                    "kind": "http",
+                    "url": "https://runner.greentic.local",
+                    "headers": {"x-routing-key": "tenant-1"},
                     "service": {
                         "bind_addr": "0.0.0.0",
                         "port": 8080,
@@ -594,8 +608,17 @@ default_team = "devex"
                         }
                     }
                 },
-                "deployer": {"transport": {"kind": "nats", "url": "nats://nats.greentic.local:4222", "subject_prefix": "greentic"}},
-                "metadata": {"transport": {"kind": "noop"}}
+                "deployer": {"kind": "nats", "url": "nats://nats.greentic.local:4222", "subject_prefix": "greentic"},
+                "store": {
+                    "kind": "http",
+                    "url": "https://store.greentic.local",
+                    "service": {
+                        "bind_addr": "0.0.0.0",
+                        "port": 7070,
+                        "metrics": {"enabled": true, "port": 9191}
+                    }
+                },
+                "metadata": {"kind": "noop"}
             },
             "events": {
                 "reconnect": {"enabled": true, "max_retries": 10},
@@ -628,6 +651,78 @@ default_team = "devex"
             .expect("runner present");
         let service = runner.service.as_ref().expect("service binding present");
         assert_eq!(service.port, Some(8080));
+
+        let store = round
+            .services
+            .as_ref()
+            .and_then(|s| s.store.as_ref())
+            .expect("store present");
+        let store_transport = store.transport.as_ref().expect("store transport present");
+        match store_transport {
+            ServiceTransportConfig::Http { url, .. } => {
+                assert_eq!(url.as_str(), "https://store.greentic.local/")
+            }
+            other => panic!("unexpected transport {other:?}"),
+        }
+        let store_service = store.service.as_ref().expect("store binding present");
+        assert_eq!(store_service.port, Some(7070));
+        let store_metrics = store_service
+            .metrics
+            .as_ref()
+            .expect("store metrics present");
+        assert_eq!(store_metrics.port, Some(9191));
+    }
+
+    #[test]
+    fn store_service_round_trips_with_bindings() {
+        let services: ServicesConfig = toml::from_str(
+            r#"
+[events]
+url = "https://events.greentic.local"
+
+[store]
+kind = "http"
+url = "https://store.greentic.local"
+
+[store.service]
+bind_addr = "0.0.0.0"
+port = 7070
+public_base_url = "https://store-public.greentic.local"
+
+[store.service.metrics]
+enabled = true
+bind_addr = "127.0.0.1"
+port = 9191
+path = "/metrics"
+"#,
+        )
+        .expect("deserialize store service");
+
+        let serialized = toml::to_string(&services).expect("serialize store");
+        let round: ServicesConfig = toml::from_str(&serialized).expect("deserialize store");
+
+        let store = round.store.expect("store config present");
+        let transport = store.transport.expect("transport present");
+        match transport {
+            ServiceTransportConfig::Http { url, .. } => {
+                assert_eq!(url.as_str(), "https://store.greentic.local/")
+            }
+            other => panic!("unexpected transport {other:?}"),
+        }
+
+        let service = store.service.expect("service present");
+        assert_eq!(service.bind_addr.as_deref(), Some("0.0.0.0"));
+        assert_eq!(service.port, Some(7070));
+        assert_eq!(
+            service.public_base_url.as_deref(),
+            Some("https://store-public.greentic.local")
+        );
+
+        let metrics = service.metrics.expect("metrics present");
+        assert_eq!(metrics.enabled, Some(true));
+        assert_eq!(metrics.bind_addr.as_deref(), Some("127.0.0.1"));
+        assert_eq!(metrics.port, Some(9191));
+        assert_eq!(metrics.path.as_deref(), Some("/metrics"));
     }
 
     #[test]

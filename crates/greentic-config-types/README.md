@@ -40,6 +40,18 @@ bind_addr = "127.0.0.1"
 port = 9090
 path = "/metrics"
 
+[services.store]
+kind = "http"
+url = "https://store.greentic.local"
+
+[services.store.service]
+bind_addr = "0.0.0.0"
+port = 7070
+
+[services.store.service.metrics]
+enabled = true
+port = 9191
+
 [services.deployer]
 kind = "nats"
 url = "nats://nats.greentic.local:4222"
