@@ -1,6 +1,7 @@
 use crate::loaders::ConfigLayer;
 use crate::loaders::{
-    DEFAULT_DEPLOYER_BASE_DOMAIN, EnvironmentLayer, PackSourceLayer, PacksLayer, default_env_id,
+    DEFAULT_DEPLOYER_BASE_DOMAIN, EnvironmentLayer, PackSourceLayer, PacksLayer,
+    ServiceEndpointLayer, ServiceTransportLayer, ServicesLayer, default_env_id,
 };
 use crate::paths::DefaultPaths;
 use crate::{ProvenanceMap, ProvenanceMapDetailed, ProvenanceRecord};
@@ -8,8 +9,8 @@ use greentic_config_types::{
     BackoffConfig, ConfigSource, ConfigVersion, DeployerConfig, DeployerProviderDefaults,
     DevConfig, EnvironmentConfig, EventsConfig, GreenticConfig, NetworkConfig, PackSourceConfig,
     PackTrustConfig, PacksConfig, PathsConfig, ProvenancePath, ReconnectConfig, RuntimeConfig,
-    SecretsBackendRefConfig, ServiceEndpointConfig, ServicesConfig, TelemetryConfig,
-    TelemetryExporterKind, TlsMode,
+    SecretsBackendRefConfig, ServiceEndpointConfig, ServiceTransportConfig, ServicesConfig,
+    TelemetryConfig, TelemetryExporterKind, TlsMode,
 };
 use std::path::PathBuf;
 
@@ -115,11 +116,84 @@ impl MergeState {
 
         if let Some(services) = layer.services {
             let target = self.acc.services.get_or_insert_with(Default::default);
-            if let Some(events) = services.events {
-                target.events = Some(events.clone());
-                self.provenance
-                    .insert(ProvenancePath("services.events".into()), source.clone());
-            }
+            merge_service_endpoint(
+                &mut target.events,
+                services.events,
+                &mut self.provenance,
+                "services.events.url",
+                "services.events.headers",
+                &source,
+            );
+            merge_transport(
+                &mut target.runner,
+                services.runner,
+                &mut self.provenance,
+                "services.runner.kind",
+                "services.runner.url",
+                "services.runner.headers",
+                "services.runner.subject_prefix",
+                &source,
+            );
+            merge_transport(
+                &mut target.deployer,
+                services.deployer,
+                &mut self.provenance,
+                "services.deployer.kind",
+                "services.deployer.url",
+                "services.deployer.headers",
+                "services.deployer.subject_prefix",
+                &source,
+            );
+            merge_transport(
+                &mut target.events_transport,
+                services.events_transport,
+                &mut self.provenance,
+                "services.events_transport.kind",
+                "services.events_transport.url",
+                "services.events_transport.headers",
+                "services.events_transport.subject_prefix",
+                &source,
+            );
+            merge_transport(
+                &mut target.source,
+                services.source,
+                &mut self.provenance,
+                "services.source.kind",
+                "services.source.url",
+                "services.source.headers",
+                "services.source.subject_prefix",
+                &source,
+            );
+            merge_transport(
+                &mut target.publish,
+                services.publish,
+                &mut self.provenance,
+                "services.publish.kind",
+                "services.publish.url",
+                "services.publish.headers",
+                "services.publish.subject_prefix",
+                &source,
+            );
+            merge_transport(
+                &mut target.metadata,
+                services.metadata,
+                &mut self.provenance,
+                "services.metadata.kind",
+                "services.metadata.url",
+                "services.metadata.headers",
+                "services.metadata.subject_prefix",
+                &source,
+            );
+            merge_transport(
+                &mut target.oauth_broker,
+                services.oauth_broker,
+                &mut self.provenance,
+                "services.oauth_broker.kind",
+                "services.oauth_broker.url",
+                "services.oauth_broker.headers",
+                "services.oauth_broker.subject_prefix",
+                &source,
+            );
         }
 
         if let Some(events) = layer.events {
@@ -163,6 +237,16 @@ impl MergeState {
                 "runtime.shutdown_grace_ms",
                 &source,
             );
+            if let Some(admin) = runtime.admin_endpoints {
+                let admin_target = target.admin_endpoints.get_or_insert_with(Default::default);
+                set_field(
+                    &mut admin_target.secrets_explain_enabled,
+                    admin.secrets_explain_enabled,
+                    &mut self.provenance,
+                    "runtime.admin_endpoints.secrets_explain_enabled",
+                    &source,
+                );
+            }
         }
 
         if let Some(telemetry) = layer.telemetry {
@@ -384,21 +468,7 @@ impl MergeState {
         };
 
         let services_layer = self.acc.services.take().unwrap_or_default();
-        let services = services_layer
-            .events
-            .map(|evt| -> anyhow::Result<ServicesConfig> {
-                let url = evt.url.ok_or_else(|| {
-                    anyhow::anyhow!("services.events.url is required when events are configured")
-                })?;
-                Ok(ServicesConfig {
-                    events: Some(ServiceEndpointConfig {
-                        url,
-                        headers: evt.headers,
-                    }),
-                    ..Default::default()
-                })
-            })
-            .transpose()?;
+        let services = finalize_services(services_layer)?;
 
         let events_layer = self.acc.events.take().unwrap_or_default();
         let reconnect_layer = events_layer.reconnect.unwrap_or_default();
@@ -421,7 +491,11 @@ impl MergeState {
             max_concurrency: runtime_layer.max_concurrency,
             task_timeout_ms: runtime_layer.task_timeout_ms,
             shutdown_grace_ms: runtime_layer.shutdown_grace_ms,
-            ..Default::default()
+            admin_endpoints: runtime_layer.admin_endpoints.map(|admin| {
+                greentic_config_types::AdminEndpointsConfig {
+                    secrets_explain_enabled: admin.secrets_explain_enabled.unwrap_or(false),
+                }
+            }),
         };
 
         let telemetry_layer = self.acc.telemetry.take().unwrap_or_default();
@@ -540,6 +614,148 @@ fn set_field_detailed<T: Clone>(
     }
 }
 
+fn merge_service_endpoint(
+    target: &mut Option<ServiceEndpointLayer>,
+    incoming: Option<ServiceEndpointLayer>,
+    provenance: &mut ProvenanceMap,
+    url_path: &str,
+    headers_path: &str,
+    source: &ConfigSource,
+) {
+    if let Some(endpoint) = incoming {
+        let target_endpoint = target.get_or_insert_with(Default::default);
+        set_field(
+            &mut target_endpoint.url,
+            endpoint.url,
+            provenance,
+            url_path,
+            source,
+        );
+        set_field(
+            &mut target_endpoint.headers,
+            endpoint.headers,
+            provenance,
+            headers_path,
+            source,
+        );
+    }
+}
+
+fn merge_service_endpoint_detailed(
+    target: &mut Option<ServiceEndpointLayer>,
+    incoming: Option<ServiceEndpointLayer>,
+    provenance: &mut ProvenanceMapDetailed,
+    url_path: &str,
+    headers_path: &str,
+    ctx: &ProvenanceCtx,
+) {
+    if let Some(endpoint) = incoming {
+        let target_endpoint = target.get_or_insert_with(Default::default);
+        set_field_detailed(
+            &mut target_endpoint.url,
+            endpoint.url,
+            provenance,
+            url_path,
+            ctx,
+        );
+        set_field_detailed(
+            &mut target_endpoint.headers,
+            endpoint.headers,
+            provenance,
+            headers_path,
+            ctx,
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn merge_transport(
+    target: &mut Option<ServiceTransportLayer>,
+    incoming: Option<ServiceTransportLayer>,
+    provenance: &mut ProvenanceMap,
+    kind_path: &str,
+    url_path: &str,
+    headers_path: &str,
+    subject_prefix_path: &str,
+    source: &ConfigSource,
+) {
+    if let Some(transport) = incoming {
+        let target_transport = target.get_or_insert_with(Default::default);
+        set_field(
+            &mut target_transport.kind,
+            transport.kind,
+            provenance,
+            kind_path,
+            source,
+        );
+        set_field(
+            &mut target_transport.url,
+            transport.url,
+            provenance,
+            url_path,
+            source,
+        );
+        set_field(
+            &mut target_transport.headers,
+            transport.headers,
+            provenance,
+            headers_path,
+            source,
+        );
+        set_field(
+            &mut target_transport.subject_prefix,
+            transport.subject_prefix,
+            provenance,
+            subject_prefix_path,
+            source,
+        );
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn merge_transport_detailed(
+    target: &mut Option<ServiceTransportLayer>,
+    incoming: Option<ServiceTransportLayer>,
+    provenance: &mut ProvenanceMapDetailed,
+    kind_path: &str,
+    url_path: &str,
+    headers_path: &str,
+    subject_prefix_path: &str,
+    ctx: &ProvenanceCtx,
+) {
+    if let Some(transport) = incoming {
+        let target_transport = target.get_or_insert_with(Default::default);
+        set_field_detailed(
+            &mut target_transport.kind,
+            transport.kind,
+            provenance,
+            kind_path,
+            ctx,
+        );
+        set_field_detailed(
+            &mut target_transport.url,
+            transport.url,
+            provenance,
+            url_path,
+            ctx,
+        );
+        set_field_detailed(
+            &mut target_transport.headers,
+            transport.headers,
+            provenance,
+            headers_path,
+            ctx,
+        );
+        set_field_detailed(
+            &mut target_transport.subject_prefix,
+            transport.subject_prefix,
+            provenance,
+            subject_prefix_path,
+            ctx,
+        );
+    }
+}
+
 pub struct MergeStateDetailed {
     acc: ConfigLayer,
     provenance: ProvenanceMapDetailed,
@@ -635,23 +851,84 @@ impl MergeStateDetailed {
 
         if let Some(services) = layer.services {
             let target = self.acc.services.get_or_insert_with(Default::default);
-            if let Some(events) = services.events {
-                let endpoint = target.events.get_or_insert_with(Default::default);
-                set_field_detailed(
-                    &mut endpoint.url,
-                    events.url,
-                    &mut self.provenance,
-                    "services.events.url",
-                    &ctx,
-                );
-                set_field_detailed(
-                    &mut endpoint.headers,
-                    events.headers,
-                    &mut self.provenance,
-                    "services.events.headers",
-                    &ctx,
-                );
-            }
+            merge_service_endpoint_detailed(
+                &mut target.events,
+                services.events,
+                &mut self.provenance,
+                "services.events.url",
+                "services.events.headers",
+                &ctx,
+            );
+            merge_transport_detailed(
+                &mut target.runner,
+                services.runner,
+                &mut self.provenance,
+                "services.runner.kind",
+                "services.runner.url",
+                "services.runner.headers",
+                "services.runner.subject_prefix",
+                &ctx,
+            );
+            merge_transport_detailed(
+                &mut target.deployer,
+                services.deployer,
+                &mut self.provenance,
+                "services.deployer.kind",
+                "services.deployer.url",
+                "services.deployer.headers",
+                "services.deployer.subject_prefix",
+                &ctx,
+            );
+            merge_transport_detailed(
+                &mut target.events_transport,
+                services.events_transport,
+                &mut self.provenance,
+                "services.events_transport.kind",
+                "services.events_transport.url",
+                "services.events_transport.headers",
+                "services.events_transport.subject_prefix",
+                &ctx,
+            );
+            merge_transport_detailed(
+                &mut target.source,
+                services.source,
+                &mut self.provenance,
+                "services.source.kind",
+                "services.source.url",
+                "services.source.headers",
+                "services.source.subject_prefix",
+                &ctx,
+            );
+            merge_transport_detailed(
+                &mut target.publish,
+                services.publish,
+                &mut self.provenance,
+                "services.publish.kind",
+                "services.publish.url",
+                "services.publish.headers",
+                "services.publish.subject_prefix",
+                &ctx,
+            );
+            merge_transport_detailed(
+                &mut target.metadata,
+                services.metadata,
+                &mut self.provenance,
+                "services.metadata.kind",
+                "services.metadata.url",
+                "services.metadata.headers",
+                "services.metadata.subject_prefix",
+                &ctx,
+            );
+            merge_transport_detailed(
+                &mut target.oauth_broker,
+                services.oauth_broker,
+                &mut self.provenance,
+                "services.oauth_broker.kind",
+                "services.oauth_broker.url",
+                "services.oauth_broker.headers",
+                "services.oauth_broker.subject_prefix",
+                &ctx,
+            );
         }
 
         if let Some(events) = layer.events {
@@ -729,6 +1006,16 @@ impl MergeStateDetailed {
                 "runtime.shutdown_grace_ms",
                 &ctx,
             );
+            if let Some(admin) = runtime.admin_endpoints {
+                let admin_target = target.admin_endpoints.get_or_insert_with(Default::default);
+                set_field_detailed(
+                    &mut admin_target.secrets_explain_enabled,
+                    admin.secrets_explain_enabled,
+                    &mut self.provenance,
+                    "runtime.admin_endpoints.secrets_explain_enabled",
+                    &ctx,
+                );
+            }
         }
 
         if let Some(telemetry) = layer.telemetry {
@@ -1000,21 +1287,7 @@ impl MergeStateDetailed {
         };
 
         let services_layer = self.acc.services.take().unwrap_or_default();
-        let services = services_layer
-            .events
-            .map(|evt| -> anyhow::Result<ServicesConfig> {
-                let url = evt.url.ok_or_else(|| {
-                    anyhow::anyhow!("services.events.url is required when events are configured")
-                })?;
-                Ok(ServicesConfig {
-                    events: Some(ServiceEndpointConfig {
-                        url,
-                        headers: evt.headers,
-                    }),
-                    ..Default::default()
-                })
-            })
-            .transpose()?;
+        let services = finalize_services(services_layer)?;
 
         let events_layer = self.acc.events.take().unwrap_or_default();
         let reconnect_layer = events_layer.reconnect.unwrap_or_default();
@@ -1037,7 +1310,11 @@ impl MergeStateDetailed {
             max_concurrency: runtime_layer.max_concurrency,
             task_timeout_ms: runtime_layer.task_timeout_ms,
             shutdown_grace_ms: runtime_layer.shutdown_grace_ms,
-            ..Default::default()
+            admin_endpoints: runtime_layer.admin_endpoints.map(|admin| {
+                greentic_config_types::AdminEndpointsConfig {
+                    secrets_explain_enabled: admin.secrets_explain_enabled.unwrap_or(false),
+                }
+            }),
         };
 
         let telemetry_layer = self.acc.telemetry.take().unwrap_or_default();
@@ -1158,6 +1435,84 @@ fn ensure_packs_provenance(provenance: &mut ProvenanceMapDetailed, packs: &Packs
                 .or_insert_with(|| defaults.clone());
         }
     }
+}
+
+fn finalize_services(services_layer: ServicesLayer) -> anyhow::Result<Option<ServicesConfig>> {
+    let mut services = ServicesConfig::default();
+    let mut any = false;
+
+    if let Some(events) = services_layer.events {
+        let url = events.url.ok_or_else(|| {
+            anyhow::anyhow!("services.events.url is required when events are configured")
+        })?;
+        services.events = Some(ServiceEndpointConfig {
+            url,
+            headers: events.headers,
+        });
+        any = true;
+    }
+
+    services.runner = finalize_transport("services.runner", services_layer.runner, &mut any)?;
+    services.deployer = finalize_transport("services.deployer", services_layer.deployer, &mut any)?;
+    services.events_transport = finalize_transport(
+        "services.events_transport",
+        services_layer.events_transport,
+        &mut any,
+    )?;
+    services.source = finalize_transport("services.source", services_layer.source, &mut any)?;
+    services.publish = finalize_transport("services.publish", services_layer.publish, &mut any)?;
+    services.metadata = finalize_transport("services.metadata", services_layer.metadata, &mut any)?;
+    services.oauth_broker = finalize_transport(
+        "services.oauth_broker",
+        services_layer.oauth_broker,
+        &mut any,
+    )?;
+
+    if any { Ok(Some(services)) } else { Ok(None) }
+}
+
+fn finalize_transport(
+    service_name: &str,
+    transport: Option<ServiceTransportLayer>,
+    any: &mut bool,
+) -> anyhow::Result<Option<ServiceTransportConfig>> {
+    let Some(layer) = transport else {
+        return Ok(None);
+    };
+    let kind_raw = layer.kind.ok_or_else(|| {
+        anyhow::anyhow!("{service_name}.kind is required when configuring a transport")
+    })?;
+    let kind = kind_raw.to_ascii_lowercase();
+
+    let config = match kind.as_str() {
+        "noop" => ServiceTransportConfig::Noop,
+        "http" => {
+            let url = layer.url.ok_or_else(|| {
+                anyhow::anyhow!("{service_name}.url is required for http transport")
+            })?;
+            ServiceTransportConfig::Http {
+                url,
+                headers: layer.headers,
+            }
+        }
+        "nats" => {
+            let url = layer.url.ok_or_else(|| {
+                anyhow::anyhow!("{service_name}.url is required for nats transport")
+            })?;
+            ServiceTransportConfig::Nats {
+                url,
+                subject_prefix: layer.subject_prefix,
+            }
+        }
+        other => {
+            return Err(anyhow::anyhow!(
+                "unknown transport kind '{other}' for {service_name}"
+            ));
+        }
+    };
+
+    *any = true;
+    Ok(Some(config))
 }
 
 fn make_absolute(path: PathBuf, defaults: &DefaultPaths) -> PathBuf {

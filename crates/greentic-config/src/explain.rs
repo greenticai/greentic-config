@@ -77,7 +77,16 @@ pub fn explain(
             "- services.events.url: {} ({})",
             events.url,
             render_source(provenance.get(&greentic_config_types::ProvenancePath(
-                "services.events".into()
+                "services.events.url".into()
+            )))
+        ));
+    }
+    if let Some(runtime) = &config.runtime.admin_endpoints {
+        lines.push(format!(
+            "- runtime.admin_endpoints.secrets_explain_enabled: {} ({})",
+            runtime.secrets_explain_enabled,
+            render_source(provenance.get(&greentic_config_types::ProvenancePath(
+                "runtime.admin_endpoints.secrets_explain_enabled".into()
             )))
         ));
     }
@@ -154,6 +163,15 @@ pub fn explain_detailed(
             events.url,
             render_record(provenance.get(&greentic_config_types::ProvenancePath(
                 "services.events.url".into()
+            )))
+        ));
+    }
+    if let Some(runtime) = &config.runtime.admin_endpoints {
+        lines.push(format!(
+            "- runtime.admin_endpoints.secrets_explain_enabled: {} ({})",
+            runtime.secrets_explain_enabled,
+            render_record(provenance.get(&greentic_config_types::ProvenancePath(
+                "runtime.admin_endpoints.secrets_explain_enabled".into()
             )))
         ));
     }

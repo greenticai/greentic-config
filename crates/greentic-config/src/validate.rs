@@ -1,5 +1,6 @@
 use greentic_config_types::{
-    BackoffConfig, GreenticConfig, PackSourceConfig, ServiceEndpointConfig, TelemetryExporterKind,
+    BackoffConfig, GreenticConfig, PackSourceConfig, ServiceEndpointConfig, ServiceTransportConfig,
+    TelemetryExporterKind,
 };
 use greentic_types::{ConnectionKind, EnvId};
 use thiserror::Error;
@@ -102,6 +103,27 @@ pub fn validate_config_with_overrides(
         && !allow_network
     {
         validate_events_endpoint(events, &config.environment.connection)?;
+    }
+
+    if let Some(services) = &config.services
+        && !allow_network
+        && matches!(config.environment.connection, Some(ConnectionKind::Offline))
+    {
+        warn_offline_transport(&mut warnings, "runner", services.runner.as_ref());
+        warn_offline_transport(&mut warnings, "deployer", services.deployer.as_ref());
+        warn_offline_transport(
+            &mut warnings,
+            "events_transport",
+            services.events_transport.as_ref(),
+        );
+        warn_offline_transport(&mut warnings, "source", services.source.as_ref());
+        warn_offline_transport(&mut warnings, "publish", services.publish.as_ref());
+        warn_offline_transport(&mut warnings, "metadata", services.metadata.as_ref());
+        warn_offline_transport(
+            &mut warnings,
+            "oauth_broker",
+            services.oauth_broker.as_ref(),
+        );
     }
 
     if let Some(events) = &config.events
@@ -215,4 +237,24 @@ fn validate_base_domain(domain: &str) -> Result<(), ValidationError> {
     }
 
     Ok(())
+}
+
+fn warn_offline_transport(
+    warnings: &mut Vec<String>,
+    name: &str,
+    transport: Option<&ServiceTransportConfig>,
+) {
+    let Some(transport) = transport else {
+        return;
+    };
+    match transport {
+        ServiceTransportConfig::Noop => {}
+        ServiceTransportConfig::Http { url, .. } | ServiceTransportConfig::Nats { url, .. } => {
+            if !is_local_url(url) {
+                warnings.push(format!(
+                    "environment.connection=offline but services.{name} transport configured at {url}; network operations may be disallowed"
+                ));
+            }
+        }
+    }
 }

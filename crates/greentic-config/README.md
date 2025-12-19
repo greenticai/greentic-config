@@ -37,9 +37,24 @@ Only explicitly supported `GREENTIC_*` variables are mapped (stable, documented 
 | `GREENTIC_PATHS_CACHE_DIR` | `paths.cache_dir` |
 | `GREENTIC_PATHS_LOGS_DIR` | `paths.logs_dir` |
 | `GREENTIC_SERVICES_EVENTS_URL` | `services.events.url` |
+| `GREENTIC_SERVICES_RUNNER_KIND` | `services.runner.kind` |
+| `GREENTIC_SERVICES_RUNNER_URL` | `services.runner.url` |
+| `GREENTIC_SERVICES_DEPLOYER_KIND` | `services.deployer.kind` |
+| `GREENTIC_SERVICES_DEPLOYER_URL` | `services.deployer.url` |
+| `GREENTIC_SERVICES_EVENTS_TRANSPORT_KIND` | `services.events_transport.kind` |
+| `GREENTIC_SERVICES_EVENTS_TRANSPORT_URL` | `services.events_transport.url` |
+| `GREENTIC_SERVICES_SOURCE_KIND` | `services.source.kind` |
+| `GREENTIC_SERVICES_SOURCE_URL` | `services.source.url` |
+| `GREENTIC_SERVICES_PUBLISH_KIND` | `services.publish.kind` |
+| `GREENTIC_SERVICES_PUBLISH_URL` | `services.publish.url` |
+| `GREENTIC_SERVICES_METADATA_KIND` | `services.metadata.kind` |
+| `GREENTIC_SERVICES_METADATA_URL` | `services.metadata.url` |
+| `GREENTIC_SERVICES_OAUTH_BROKER_KIND` | `services.oauth_broker.kind` |
+| `GREENTIC_SERVICES_OAUTH_BROKER_URL` | `services.oauth_broker.url` |
 | `GREENTIC_RUNTIME_MAX_CONCURRENCY` | `runtime.max_concurrency` |
 | `GREENTIC_RUNTIME_TASK_TIMEOUT_MS` | `runtime.task_timeout_ms` |
 | `GREENTIC_RUNTIME_SHUTDOWN_GRACE_MS` | `runtime.shutdown_grace_ms` |
+| `GREENTIC_RUNTIME_ADMIN_SECRETS_EXPLAIN_ENABLED` | `runtime.admin_endpoints.secrets_explain_enabled` |
 | `GREENTIC_TELEMETRY_ENABLED` | `telemetry.enabled` |
 | `GREENTIC_TELEMETRY_EXPORTER` | `telemetry.exporter` |
 | `GREENTIC_TELEMETRY_ENDPOINT` | `telemetry.endpoint` |
@@ -59,6 +74,21 @@ Only explicitly supported `GREENTIC_*` variables are mapped (stable, documented 
 | `GREENTIC_EVENTS_BACKOFF_MAX_MS` | `events.backoff.max_ms` |
 | `GREENTIC_EVENTS_BACKOFF_MULTIPLIER` | `events.backoff.multiplier` |
 | `GREENTIC_EVENTS_BACKOFF_JITTER` | `events.backoff.jitter` |
+
+Example snippet:
+
+```toml
+[services]
+runner = { kind = "http", url = "https://runner.greentic.local" }
+deployer = { kind = "nats", url = "nats://nats.greentic.local:4222" }
+events_transport = { kind = "http", url = "https://events.greentic.local" }
+
+[services.events]
+url = "https://events.greentic.local"
+
+[runtime.admin_endpoints]
+secrets_explain_enabled = true
+```
 
 ## Status
 - Schema and loader implemented; CLI binary behind the `cli` feature (`greentic-config show|explain|validate`).

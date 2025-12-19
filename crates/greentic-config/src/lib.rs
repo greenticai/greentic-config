@@ -102,6 +102,93 @@ impl CliOverrides {
         self
     }
 
+    pub fn with_services_runner_transport(
+        mut self,
+        transport: greentic_config_types::ServiceTransportConfig,
+    ) -> Self {
+        self.layer
+            .services
+            .get_or_insert_with(Default::default)
+            .runner = Some(transport_to_layer(transport));
+        self
+    }
+
+    pub fn with_services_deployer_transport(
+        mut self,
+        transport: greentic_config_types::ServiceTransportConfig,
+    ) -> Self {
+        self.layer
+            .services
+            .get_or_insert_with(Default::default)
+            .deployer = Some(transport_to_layer(transport));
+        self
+    }
+
+    pub fn with_services_events_transport(
+        mut self,
+        transport: greentic_config_types::ServiceTransportConfig,
+    ) -> Self {
+        self.layer
+            .services
+            .get_or_insert_with(Default::default)
+            .events_transport = Some(transport_to_layer(transport));
+        self
+    }
+
+    pub fn with_services_source_transport(
+        mut self,
+        transport: greentic_config_types::ServiceTransportConfig,
+    ) -> Self {
+        self.layer
+            .services
+            .get_or_insert_with(Default::default)
+            .source = Some(transport_to_layer(transport));
+        self
+    }
+
+    pub fn with_services_publish_transport(
+        mut self,
+        transport: greentic_config_types::ServiceTransportConfig,
+    ) -> Self {
+        self.layer
+            .services
+            .get_or_insert_with(Default::default)
+            .publish = Some(transport_to_layer(transport));
+        self
+    }
+
+    pub fn with_services_metadata_transport(
+        mut self,
+        transport: greentic_config_types::ServiceTransportConfig,
+    ) -> Self {
+        self.layer
+            .services
+            .get_or_insert_with(Default::default)
+            .metadata = Some(transport_to_layer(transport));
+        self
+    }
+
+    pub fn with_services_oauth_broker_transport(
+        mut self,
+        transport: greentic_config_types::ServiceTransportConfig,
+    ) -> Self {
+        self.layer
+            .services
+            .get_or_insert_with(Default::default)
+            .oauth_broker = Some(transport_to_layer(transport));
+        self
+    }
+
+    pub fn with_runtime_admin_secrets_explain_enabled(mut self, enabled: bool) -> Self {
+        self.layer
+            .runtime
+            .get_or_insert_with(Default::default)
+            .admin_endpoints
+            .get_or_insert_with(Default::default)
+            .secrets_explain_enabled = Some(enabled);
+        self
+    }
+
     pub fn into_layer(self) -> ConfigLayer {
         self.layer
     }
@@ -110,6 +197,36 @@ impl CliOverrides {
 impl From<CliOverrides> for ConfigLayer {
     fn from(value: CliOverrides) -> Self {
         value.layer
+    }
+}
+
+fn transport_to_layer(
+    transport: greentic_config_types::ServiceTransportConfig,
+) -> crate::loaders::ServiceTransportLayer {
+    match transport {
+        greentic_config_types::ServiceTransportConfig::Noop => {
+            crate::loaders::ServiceTransportLayer {
+                kind: Some("noop".into()),
+                ..Default::default()
+            }
+        }
+        greentic_config_types::ServiceTransportConfig::Http { url, headers } => {
+            crate::loaders::ServiceTransportLayer {
+                kind: Some("http".into()),
+                url: Some(url),
+                headers,
+                ..Default::default()
+            }
+        }
+        greentic_config_types::ServiceTransportConfig::Nats {
+            url,
+            subject_prefix,
+        } => crate::loaders::ServiceTransportLayer {
+            kind: Some("nats".into()),
+            url: Some(url),
+            subject_prefix,
+            ..Default::default()
+        },
     }
 }
 
@@ -306,7 +423,7 @@ mod tests {
     use super::*;
     use crate::loaders::{
         BackoffLayer, ConfigLayer, DEFAULT_DEPLOYER_BASE_DOMAIN, DeployerLayer, EnvironmentLayer,
-        EventsLayer, ServiceEndpointLayer, ServicesLayer,
+        EventsLayer, ServiceEndpointLayer, ServiceTransportLayer, ServicesLayer,
     };
     use greentic_config_types::PackSourceConfig;
     use greentic_types::ConnectionKind;
@@ -500,6 +617,7 @@ mod tests {
                     url: Some(Url::parse("https://user.example.com").unwrap()),
                     headers: None,
                 }),
+                ..Default::default()
             }),
             ..Default::default()
         };
@@ -509,6 +627,7 @@ mod tests {
                     url: Some(Url::parse("https://project.example.com").unwrap()),
                     headers: None,
                 }),
+                ..Default::default()
             }),
             ..Default::default()
         };
@@ -518,6 +637,7 @@ mod tests {
                     url: Some(Url::parse("https://env.example.com").unwrap()),
                     headers: None,
                 }),
+                ..Default::default()
             }),
             ..Default::default()
         };
@@ -527,6 +647,7 @@ mod tests {
                     url: Some(Url::parse("https://cli.example.com").unwrap()),
                     headers: None,
                 }),
+                ..Default::default()
             }),
             ..Default::default()
         };
@@ -546,7 +667,156 @@ mod tests {
         assert_eq!(
             provenance
                 .get(&greentic_config_types::ProvenancePath(
-                    "services.events".into()
+                    "services.events.url".into()
+                ))
+                .cloned(),
+            Some(ConfigSource::Cli)
+        );
+    }
+
+    #[test]
+    fn runner_transport_precedence_and_provenance() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let default_paths = DefaultPaths::from_root(&root);
+
+        let user_layer = ConfigLayer {
+            services: Some(ServicesLayer {
+                runner: Some(ServiceTransportLayer {
+                    kind: Some("http".into()),
+                    url: Some(Url::parse("https://user-runner.example.com").unwrap()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let project_layer = ConfigLayer {
+            services: Some(ServicesLayer {
+                runner: Some(ServiceTransportLayer {
+                    kind: Some("http".into()),
+                    url: Some(Url::parse("https://project-runner.example.com").unwrap()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let env_layer = ConfigLayer {
+            services: Some(ServicesLayer {
+                runner: Some(ServiceTransportLayer {
+                    kind: Some("http".into()),
+                    url: Some(Url::parse("https://env-runner.example.com").unwrap()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let cli_layer = ConfigLayer {
+            services: Some(ServicesLayer {
+                runner: Some(ServiceTransportLayer {
+                    kind: Some("http".into()),
+                    url: Some(Url::parse("https://cli-runner.example.com").unwrap()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let mut merged = merge::MergeState::new(
+            loaders::default_layer(&root, &default_paths),
+            ConfigSource::Default,
+        );
+        merged.apply(user_layer, ConfigSource::User);
+        merged.apply(project_layer, ConfigSource::Project);
+        merged.apply(env_layer, ConfigSource::Environment);
+        merged.apply(cli_layer, ConfigSource::Cli);
+        let (resolved, provenance, _) = merged.finalize(&default_paths).unwrap();
+
+        let runner_url = match resolved.services.unwrap().runner.as_ref().unwrap() {
+            greentic_config_types::ServiceTransportConfig::Http { url, .. }
+            | greentic_config_types::ServiceTransportConfig::Nats { url, .. } => url.to_string(),
+            greentic_config_types::ServiceTransportConfig::Noop => {
+                panic!("expected http or nats transport")
+            }
+        };
+        assert_eq!(runner_url, "https://cli-runner.example.com/");
+        assert_eq!(
+            provenance
+                .get(&greentic_config_types::ProvenancePath(
+                    "services.runner.url".into()
+                ))
+                .cloned(),
+            Some(ConfigSource::Cli)
+        );
+    }
+
+    #[test]
+    fn runtime_admin_endpoints_precedence_and_provenance() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let default_paths = DefaultPaths::from_root(&root);
+
+        let user_layer = ConfigLayer {
+            runtime: Some(crate::loaders::RuntimeLayer {
+                admin_endpoints: Some(crate::loaders::AdminEndpointsLayer {
+                    secrets_explain_enabled: Some(false),
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let project_layer = ConfigLayer {
+            runtime: Some(crate::loaders::RuntimeLayer {
+                admin_endpoints: Some(crate::loaders::AdminEndpointsLayer {
+                    secrets_explain_enabled: Some(true),
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let env_layer = ConfigLayer {
+            runtime: Some(crate::loaders::RuntimeLayer {
+                admin_endpoints: Some(crate::loaders::AdminEndpointsLayer {
+                    secrets_explain_enabled: Some(false),
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let cli_layer = ConfigLayer {
+            runtime: Some(crate::loaders::RuntimeLayer {
+                admin_endpoints: Some(crate::loaders::AdminEndpointsLayer {
+                    secrets_explain_enabled: Some(true),
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        let mut merged = merge::MergeState::new(
+            loaders::default_layer(&root, &default_paths),
+            ConfigSource::Default,
+        );
+        merged.apply(user_layer, ConfigSource::User);
+        merged.apply(project_layer, ConfigSource::Project);
+        merged.apply(env_layer, ConfigSource::Environment);
+        merged.apply(cli_layer, ConfigSource::Cli);
+        let (resolved, provenance, _) = merged.finalize(&default_paths).unwrap();
+
+        let enabled = resolved
+            .runtime
+            .admin_endpoints
+            .as_ref()
+            .map(|a| a.secrets_explain_enabled)
+            .unwrap();
+        assert!(enabled);
+        assert_eq!(
+            provenance
+                .get(&greentic_config_types::ProvenancePath(
+                    "runtime.admin_endpoints.secrets_explain_enabled".into()
                 ))
                 .cloned(),
             Some(ConfigSource::Cli)
@@ -571,6 +841,7 @@ mod tests {
                     url: Some(Url::parse("https://events.example.com").unwrap()),
                     headers: None,
                 }),
+                ..Default::default()
             }),
             ..Default::default()
         };
@@ -934,6 +1205,45 @@ env_id = "prod"
             !warnings
                 .iter()
                 .any(|w| w.contains("events endpoint") || w.contains("EventsEndpointOffline"))
+        );
+    }
+
+    #[test]
+    fn offline_service_transport_emits_warning() {
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let default_paths = DefaultPaths::from_root(&root);
+        let mut merged = crate::merge::MergeState::new(
+            crate::loaders::default_layer(&root, &default_paths),
+            ConfigSource::Default,
+        );
+
+        let layer = ConfigLayer {
+            environment: Some(EnvironmentLayer {
+                env_id: Some(serde_json::from_str("\"dev\"").unwrap()),
+                deployment: None,
+                connection: Some(ConnectionKind::Offline),
+                region: None,
+            }),
+            services: Some(ServicesLayer {
+                runner: Some(ServiceTransportLayer {
+                    kind: Some("http".into()),
+                    url: Some(Url::parse("https://runner.example.com").unwrap()),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+
+        merged.apply(layer, ConfigSource::Project);
+        let (resolved, _, _) = merged.finalize(&default_paths).unwrap();
+        let warnings = crate::validate::validate_config_with_overrides(&resolved, true, false)
+            .expect("validation should warn, not error");
+        assert!(
+            warnings
+                .iter()
+                .any(|w| w.contains("services.runner") && w.contains("offline"))
         );
     }
 }
