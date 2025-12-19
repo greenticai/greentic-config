@@ -1,6 +1,6 @@
 use greentic_config_types::{
-    BackoffConfig, GreenticConfig, PackSourceConfig, ServiceEndpointConfig, ServiceTransportConfig,
-    TelemetryExporterKind,
+    BackoffConfig, GreenticConfig, MetricsConfig, PackSourceConfig, ServiceConfig,
+    ServiceEndpointConfig, ServiceTransportConfig, ServicesConfig, TelemetryExporterKind,
 };
 use greentic_types::{ConnectionKind, EnvId};
 use thiserror::Error;
@@ -105,25 +105,59 @@ pub fn validate_config_with_overrides(
         validate_events_endpoint(events, &config.environment.connection)?;
     }
 
-    if let Some(services) = &config.services
-        && !allow_network
-        && matches!(config.environment.connection, Some(ConnectionKind::Offline))
-    {
-        warn_offline_transport(&mut warnings, "runner", services.runner.as_ref());
-        warn_offline_transport(&mut warnings, "deployer", services.deployer.as_ref());
-        warn_offline_transport(
-            &mut warnings,
-            "events_transport",
-            services.events_transport.as_ref(),
-        );
-        warn_offline_transport(&mut warnings, "source", services.source.as_ref());
-        warn_offline_transport(&mut warnings, "publish", services.publish.as_ref());
-        warn_offline_transport(&mut warnings, "metadata", services.metadata.as_ref());
-        warn_offline_transport(
-            &mut warnings,
-            "oauth_broker",
-            services.oauth_broker.as_ref(),
-        );
+    if let Some(services) = &config.services {
+        validate_service_bindings(&mut warnings, services);
+
+        if !allow_network && matches!(config.environment.connection, Some(ConnectionKind::Offline))
+        {
+            warn_offline_transport(
+                &mut warnings,
+                "runner",
+                services.runner.as_ref().and_then(|s| s.transport.as_ref()),
+            );
+            warn_offline_transport(
+                &mut warnings,
+                "deployer",
+                services
+                    .deployer
+                    .as_ref()
+                    .and_then(|s| s.transport.as_ref()),
+            );
+            warn_offline_transport(
+                &mut warnings,
+                "events_transport",
+                services
+                    .events_transport
+                    .as_ref()
+                    .and_then(|s| s.transport.as_ref()),
+            );
+            warn_offline_transport(
+                &mut warnings,
+                "source",
+                services.source.as_ref().and_then(|s| s.transport.as_ref()),
+            );
+            warn_offline_transport(
+                &mut warnings,
+                "publish",
+                services.publish.as_ref().and_then(|s| s.transport.as_ref()),
+            );
+            warn_offline_transport(
+                &mut warnings,
+                "metadata",
+                services
+                    .metadata
+                    .as_ref()
+                    .and_then(|s| s.transport.as_ref()),
+            );
+            warn_offline_transport(
+                &mut warnings,
+                "oauth_broker",
+                services
+                    .oauth_broker
+                    .as_ref()
+                    .and_then(|s| s.transport.as_ref()),
+            );
+        }
     }
 
     if let Some(events) = &config.events
@@ -257,4 +291,81 @@ fn warn_offline_transport(
             }
         }
     }
+}
+
+fn validate_service_bindings(warnings: &mut Vec<String>, services: &ServicesConfig) {
+    for (name, service) in [
+        ("runner", services.runner.as_ref()),
+        ("deployer", services.deployer.as_ref()),
+        ("events_transport", services.events_transport.as_ref()),
+        ("source", services.source.as_ref()),
+        ("publish", services.publish.as_ref()),
+        ("metadata", services.metadata.as_ref()),
+        ("oauth_broker", services.oauth_broker.as_ref()),
+    ] {
+        if let Some(binding) = service.and_then(|svc| svc.service.as_ref()) {
+            validate_service_binding(warnings, name, binding);
+        }
+    }
+}
+
+fn validate_service_binding(warnings: &mut Vec<String>, name: &str, binding: &ServiceConfig) {
+    if let Some(bind_addr) = binding.bind_addr.as_deref()
+        && !bind_addr.is_empty()
+        && !host_like(bind_addr)
+    {
+        warnings.push(format!(
+            "services.{name}.service.bind_addr '{bind_addr}' does not look like an IP/hostname; continuing"
+        ));
+    }
+    if let Some(port) = binding.port
+        && port == 0
+    {
+        warnings.push(format!(
+            "services.{name}.service.port must be between 1-65535; ignoring zero"
+        ));
+    }
+    if let Some(public) = binding.public_base_url.as_deref()
+        && url::Url::parse(public).is_err()
+    {
+        warnings.push(format!(
+            "services.{name}.service.public_base_url '{public}' is not a valid URL"
+        ));
+    }
+    if let Some(metrics) = binding.metrics.as_ref() {
+        validate_metrics(warnings, name, metrics);
+    }
+}
+
+fn validate_metrics(warnings: &mut Vec<String>, name: &str, metrics: &MetricsConfig) {
+    if let Some(bind_addr) = metrics.bind_addr.as_deref()
+        && !bind_addr.is_empty()
+        && !host_like(bind_addr)
+    {
+        warnings.push(format!(
+            "services.{name}.service.metrics.bind_addr '{bind_addr}' does not look like an IP/hostname; continuing"
+        ));
+    }
+    if let Some(port) = metrics.port
+        && port == 0
+    {
+        warnings.push(format!(
+            "services.{name}.service.metrics.port must be between 1-65535; ignoring zero"
+        ));
+    }
+    if let Some(path) = metrics.path.as_deref()
+        && !path.starts_with('/')
+    {
+        warnings.push(format!(
+            "services.{name}.service.metrics.path should start with '/'; got '{path}'"
+        ));
+    }
+}
+
+fn host_like(value: &str) -> bool {
+    value
+        .parse::<std::net::IpAddr>()
+        .map(|_| true)
+        .or_else(|_| url::Host::parse(value).map(|_| true))
+        .unwrap_or(false)
 }

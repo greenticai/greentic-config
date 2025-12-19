@@ -70,16 +70,17 @@ pub fn explain(
             )))
         ));
     }
-    if let Some(services) = &config.services
-        && let Some(events) = &services.events
-    {
-        lines.push(format!(
-            "- services.events.url: {} ({})",
-            events.url,
-            render_source(provenance.get(&greentic_config_types::ProvenancePath(
-                "services.events.url".into()
-            )))
-        ));
+    if let Some(services) = &config.services {
+        if let Some(events) = &services.events {
+            lines.push(format!(
+                "- services.events.url: {} ({})",
+                events.url,
+                render_source(provenance.get(&greentic_config_types::ProvenancePath(
+                    "services.events.url".into()
+                )))
+            ));
+        }
+        append_service_bindings(&mut lines, services, provenance);
     }
     if let Some(runtime) = &config.runtime.admin_endpoints {
         lines.push(format!(
@@ -155,16 +156,17 @@ pub fn explain_detailed(
             "paths.state_dir".into()
         )))
     ));
-    if let Some(services) = &config.services
-        && let Some(events) = &services.events
-    {
-        lines.push(format!(
-            "- services.events.url: {} ({})",
-            events.url,
-            render_record(provenance.get(&greentic_config_types::ProvenancePath(
-                "services.events.url".into()
-            )))
-        ));
+    if let Some(services) = &config.services {
+        if let Some(events) = &services.events {
+            lines.push(format!(
+                "- services.events.url: {} ({})",
+                events.url,
+                render_record(provenance.get(&greentic_config_types::ProvenancePath(
+                    "services.events.url".into()
+                )))
+            ));
+        }
+        append_service_bindings_detailed(&mut lines, services, provenance);
     }
     if let Some(runtime) = &config.runtime.admin_endpoints {
         lines.push(format!(
@@ -202,6 +204,174 @@ fn render_source(source: Option<&ConfigSource>) -> String {
         Some(ConfigSource::Environment) => "env".into(),
         Some(ConfigSource::Cli) => "cli".into(),
         None => "unknown".into(),
+    }
+}
+
+fn append_service_bindings(
+    lines: &mut Vec<String>,
+    services: &greentic_config_types::ServicesConfig,
+    provenance: &ProvenanceMap,
+) {
+    for (name, entry) in [
+        ("runner", services.runner.as_ref()),
+        ("deployer", services.deployer.as_ref()),
+        ("events_transport", services.events_transport.as_ref()),
+        ("source", services.source.as_ref()),
+        ("publish", services.publish.as_ref()),
+        ("metadata", services.metadata.as_ref()),
+        ("oauth_broker", services.oauth_broker.as_ref()),
+    ] {
+        if let Some(binding) = entry.and_then(|svc| svc.service.as_ref()) {
+            lines.push(format!(
+                "- services.{name}.service.bind_addr: {:?} ({})",
+                binding.bind_addr,
+                render_source(
+                    provenance.get(&greentic_config_types::ProvenancePath(format!(
+                        "services.{name}.service.bind_addr"
+                    )))
+                )
+            ));
+            lines.push(format!(
+                "- services.{name}.service.port: {:?} ({})",
+                binding.port,
+                render_source(
+                    provenance.get(&greentic_config_types::ProvenancePath(format!(
+                        "services.{name}.service.port"
+                    )))
+                )
+            ));
+            lines.push(format!(
+                "- services.{name}.service.public_base_url: {:?} ({})",
+                binding.public_base_url,
+                render_source(
+                    provenance.get(&greentic_config_types::ProvenancePath(format!(
+                        "services.{name}.service.public_base_url"
+                    )))
+                )
+            ));
+            if let Some(metrics) = binding.metrics.as_ref() {
+                lines.push(format!(
+                    "- services.{name}.service.metrics.enabled: {:?} ({})",
+                    metrics.enabled,
+                    render_source(
+                        provenance.get(&greentic_config_types::ProvenancePath(format!(
+                            "services.{name}.service.metrics.enabled"
+                        )))
+                    )
+                ));
+                lines.push(format!(
+                    "- services.{name}.service.metrics.bind_addr: {:?} ({})",
+                    metrics.bind_addr,
+                    render_source(
+                        provenance.get(&greentic_config_types::ProvenancePath(format!(
+                            "services.{name}.service.metrics.bind_addr"
+                        )))
+                    )
+                ));
+                lines.push(format!(
+                    "- services.{name}.service.metrics.port: {:?} ({})",
+                    metrics.port,
+                    render_source(
+                        provenance.get(&greentic_config_types::ProvenancePath(format!(
+                            "services.{name}.service.metrics.port"
+                        )))
+                    )
+                ));
+                lines.push(format!(
+                    "- services.{name}.service.metrics.path: {:?} ({})",
+                    metrics.path,
+                    render_source(
+                        provenance.get(&greentic_config_types::ProvenancePath(format!(
+                            "services.{name}.service.metrics.path"
+                        )))
+                    )
+                ));
+            }
+        }
+    }
+}
+
+fn append_service_bindings_detailed(
+    lines: &mut Vec<String>,
+    services: &greentic_config_types::ServicesConfig,
+    provenance: &ProvenanceMapDetailed,
+) {
+    for (name, entry) in [
+        ("runner", services.runner.as_ref()),
+        ("deployer", services.deployer.as_ref()),
+        ("events_transport", services.events_transport.as_ref()),
+        ("source", services.source.as_ref()),
+        ("publish", services.publish.as_ref()),
+        ("metadata", services.metadata.as_ref()),
+        ("oauth_broker", services.oauth_broker.as_ref()),
+    ] {
+        if let Some(binding) = entry.and_then(|svc| svc.service.as_ref()) {
+            lines.push(format!(
+                "- services.{name}.service.bind_addr: {:?} ({})",
+                binding.bind_addr,
+                render_record(
+                    provenance.get(&greentic_config_types::ProvenancePath(format!(
+                        "services.{name}.service.bind_addr"
+                    )))
+                )
+            ));
+            lines.push(format!(
+                "- services.{name}.service.port: {:?} ({})",
+                binding.port,
+                render_record(
+                    provenance.get(&greentic_config_types::ProvenancePath(format!(
+                        "services.{name}.service.port"
+                    )))
+                )
+            ));
+            lines.push(format!(
+                "- services.{name}.service.public_base_url: {:?} ({})",
+                binding.public_base_url,
+                render_record(
+                    provenance.get(&greentic_config_types::ProvenancePath(format!(
+                        "services.{name}.service.public_base_url"
+                    )))
+                )
+            ));
+            if let Some(metrics) = binding.metrics.as_ref() {
+                lines.push(format!(
+                    "- services.{name}.service.metrics.enabled: {:?} ({})",
+                    metrics.enabled,
+                    render_record(
+                        provenance.get(&greentic_config_types::ProvenancePath(format!(
+                            "services.{name}.service.metrics.enabled"
+                        )))
+                    )
+                ));
+                lines.push(format!(
+                    "- services.{name}.service.metrics.bind_addr: {:?} ({})",
+                    metrics.bind_addr,
+                    render_record(
+                        provenance.get(&greentic_config_types::ProvenancePath(format!(
+                            "services.{name}.service.metrics.bind_addr"
+                        )))
+                    )
+                ));
+                lines.push(format!(
+                    "- services.{name}.service.metrics.port: {:?} ({})",
+                    metrics.port,
+                    render_record(
+                        provenance.get(&greentic_config_types::ProvenancePath(format!(
+                            "services.{name}.service.metrics.port"
+                        )))
+                    )
+                ));
+                lines.push(format!(
+                    "- services.{name}.service.metrics.path: {:?} ({})",
+                    metrics.path,
+                    render_record(
+                        provenance.get(&greentic_config_types::ProvenancePath(format!(
+                            "services.{name}.service.metrics.path"
+                        )))
+                    )
+                ));
+            }
+        }
     }
 }
 

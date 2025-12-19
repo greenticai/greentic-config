@@ -17,7 +17,8 @@ Enterprise configuration loader for Greentic hosts. This crate resolves configur
 - If `--config` is set, it replaces project discovery (`<project_root>/.greentic/config.toml`) but keeps the same precedence position (project layer).
 
 ## Services and events mapping
-- Services endpoints (e.g., `services.events.url`) live in `greentic-config-types`; resolver applies precedence and exposes provenance.
+- Services transports (e.g., `services.runner.kind/url`) are outbound client settings (HTTP/NATS/noop).
+- Services bindings (`services.*.service`) describe how this host listens/advertises (bind_addr/port/public_base_url/metrics), non-secret only.
 - Events knobs (`events.reconnect`, `events.backoff`) get defaults (reconnect enabled, max_retries=50, backoff initial=250ms, max=30s, multiplier=2.0, jitter=true) and validation (offline + remote endpoint is rejected; backoff sanity enforced).
 - No secrets in config; route auth material via your secrets backend.
 
@@ -39,18 +40,67 @@ Only explicitly supported `GREENTIC_*` variables are mapped (stable, documented 
 | `GREENTIC_SERVICES_EVENTS_URL` | `services.events.url` |
 | `GREENTIC_SERVICES_RUNNER_KIND` | `services.runner.kind` |
 | `GREENTIC_SERVICES_RUNNER_URL` | `services.runner.url` |
+| `GREENTIC_SERVICES_RUNNER_BIND_ADDR` | `services.runner.service.bind_addr` |
+| `GREENTIC_SERVICES_RUNNER_PORT` | `services.runner.service.port` |
+| `GREENTIC_SERVICES_RUNNER_PUBLIC_BASE_URL` | `services.runner.service.public_base_url` |
+| `GREENTIC_SERVICES_RUNNER_METRICS_ENABLED` | `services.runner.service.metrics.enabled` |
+| `GREENTIC_SERVICES_RUNNER_METRICS_BIND_ADDR` | `services.runner.service.metrics.bind_addr` |
+| `GREENTIC_SERVICES_RUNNER_METRICS_PORT` | `services.runner.service.metrics.port` |
+| `GREENTIC_SERVICES_RUNNER_METRICS_PATH` | `services.runner.service.metrics.path` |
 | `GREENTIC_SERVICES_DEPLOYER_KIND` | `services.deployer.kind` |
 | `GREENTIC_SERVICES_DEPLOYER_URL` | `services.deployer.url` |
+| `GREENTIC_SERVICES_DEPLOYER_BIND_ADDR` | `services.deployer.service.bind_addr` |
+| `GREENTIC_SERVICES_DEPLOYER_PORT` | `services.deployer.service.port` |
+| `GREENTIC_SERVICES_DEPLOYER_PUBLIC_BASE_URL` | `services.deployer.service.public_base_url` |
+| `GREENTIC_SERVICES_DEPLOYER_METRICS_ENABLED` | `services.deployer.service.metrics.enabled` |
+| `GREENTIC_SERVICES_DEPLOYER_METRICS_BIND_ADDR` | `services.deployer.service.metrics.bind_addr` |
+| `GREENTIC_SERVICES_DEPLOYER_METRICS_PORT` | `services.deployer.service.metrics.port` |
+| `GREENTIC_SERVICES_DEPLOYER_METRICS_PATH` | `services.deployer.service.metrics.path` |
 | `GREENTIC_SERVICES_EVENTS_TRANSPORT_KIND` | `services.events_transport.kind` |
 | `GREENTIC_SERVICES_EVENTS_TRANSPORT_URL` | `services.events_transport.url` |
+| `GREENTIC_SERVICES_EVENTS_TRANSPORT_BIND_ADDR` | `services.events_transport.service.bind_addr` |
+| `GREENTIC_SERVICES_EVENTS_TRANSPORT_PORT` | `services.events_transport.service.port` |
+| `GREENTIC_SERVICES_EVENTS_TRANSPORT_PUBLIC_BASE_URL` | `services.events_transport.service.public_base_url` |
+| `GREENTIC_SERVICES_EVENTS_TRANSPORT_METRICS_ENABLED` | `services.events_transport.service.metrics.enabled` |
+| `GREENTIC_SERVICES_EVENTS_TRANSPORT_METRICS_BIND_ADDR` | `services.events_transport.service.metrics.bind_addr` |
+| `GREENTIC_SERVICES_EVENTS_TRANSPORT_METRICS_PORT` | `services.events_transport.service.metrics.port` |
+| `GREENTIC_SERVICES_EVENTS_TRANSPORT_METRICS_PATH` | `services.events_transport.service.metrics.path` |
 | `GREENTIC_SERVICES_SOURCE_KIND` | `services.source.kind` |
 | `GREENTIC_SERVICES_SOURCE_URL` | `services.source.url` |
+| `GREENTIC_SERVICES_SOURCE_BIND_ADDR` | `services.source.service.bind_addr` |
+| `GREENTIC_SERVICES_SOURCE_PORT` | `services.source.service.port` |
+| `GREENTIC_SERVICES_SOURCE_PUBLIC_BASE_URL` | `services.source.service.public_base_url` |
+| `GREENTIC_SERVICES_SOURCE_METRICS_ENABLED` | `services.source.service.metrics.enabled` |
+| `GREENTIC_SERVICES_SOURCE_METRICS_BIND_ADDR` | `services.source.service.metrics.bind_addr` |
+| `GREENTIC_SERVICES_SOURCE_METRICS_PORT` | `services.source.service.metrics.port` |
+| `GREENTIC_SERVICES_SOURCE_METRICS_PATH` | `services.source.service.metrics.path` |
 | `GREENTIC_SERVICES_PUBLISH_KIND` | `services.publish.kind` |
 | `GREENTIC_SERVICES_PUBLISH_URL` | `services.publish.url` |
+| `GREENTIC_SERVICES_PUBLISH_BIND_ADDR` | `services.publish.service.bind_addr` |
+| `GREENTIC_SERVICES_PUBLISH_PORT` | `services.publish.service.port` |
+| `GREENTIC_SERVICES_PUBLISH_PUBLIC_BASE_URL` | `services.publish.service.public_base_url` |
+| `GREENTIC_SERVICES_PUBLISH_METRICS_ENABLED` | `services.publish.service.metrics.enabled` |
+| `GREENTIC_SERVICES_PUBLISH_METRICS_BIND_ADDR` | `services.publish.service.metrics.bind_addr` |
+| `GREENTIC_SERVICES_PUBLISH_METRICS_PORT` | `services.publish.service.metrics.port` |
+| `GREENTIC_SERVICES_PUBLISH_METRICS_PATH` | `services.publish.service.metrics.path` |
 | `GREENTIC_SERVICES_METADATA_KIND` | `services.metadata.kind` |
 | `GREENTIC_SERVICES_METADATA_URL` | `services.metadata.url` |
+| `GREENTIC_SERVICES_METADATA_BIND_ADDR` | `services.metadata.service.bind_addr` |
+| `GREENTIC_SERVICES_METADATA_PORT` | `services.metadata.service.port` |
+| `GREENTIC_SERVICES_METADATA_PUBLIC_BASE_URL` | `services.metadata.service.public_base_url` |
+| `GREENTIC_SERVICES_METADATA_METRICS_ENABLED` | `services.metadata.service.metrics.enabled` |
+| `GREENTIC_SERVICES_METADATA_METRICS_BIND_ADDR` | `services.metadata.service.metrics.bind_addr` |
+| `GREENTIC_SERVICES_METADATA_METRICS_PORT` | `services.metadata.service.metrics.port` |
+| `GREENTIC_SERVICES_METADATA_METRICS_PATH` | `services.metadata.service.metrics.path` |
 | `GREENTIC_SERVICES_OAUTH_BROKER_KIND` | `services.oauth_broker.kind` |
 | `GREENTIC_SERVICES_OAUTH_BROKER_URL` | `services.oauth_broker.url` |
+| `GREENTIC_SERVICES_OAUTH_BROKER_BIND_ADDR` | `services.oauth_broker.service.bind_addr` |
+| `GREENTIC_SERVICES_OAUTH_BROKER_PORT` | `services.oauth_broker.service.port` |
+| `GREENTIC_SERVICES_OAUTH_BROKER_PUBLIC_BASE_URL` | `services.oauth_broker.service.public_base_url` |
+| `GREENTIC_SERVICES_OAUTH_BROKER_METRICS_ENABLED` | `services.oauth_broker.service.metrics.enabled` |
+| `GREENTIC_SERVICES_OAUTH_BROKER_METRICS_BIND_ADDR` | `services.oauth_broker.service.metrics.bind_addr` |
+| `GREENTIC_SERVICES_OAUTH_BROKER_METRICS_PORT` | `services.oauth_broker.service.metrics.port` |
+| `GREENTIC_SERVICES_OAUTH_BROKER_METRICS_PATH` | `services.oauth_broker.service.metrics.path` |
 | `GREENTIC_RUNTIME_MAX_CONCURRENCY` | `runtime.max_concurrency` |
 | `GREENTIC_RUNTIME_TASK_TIMEOUT_MS` | `runtime.task_timeout_ms` |
 | `GREENTIC_RUNTIME_SHUTDOWN_GRACE_MS` | `runtime.shutdown_grace_ms` |
@@ -78,10 +128,24 @@ Only explicitly supported `GREENTIC_*` variables are mapped (stable, documented 
 Example snippet:
 
 ```toml
-[services]
-runner = { kind = "http", url = "https://runner.greentic.local" }
-deployer = { kind = "nats", url = "nats://nats.greentic.local:4222" }
-events_transport = { kind = "http", url = "https://events.greentic.local" }
+[services.runner]
+kind = "http"
+url = "https://runner.greentic.local"
+
+[services.runner.service]
+bind_addr = "0.0.0.0"
+port = 8080
+public_base_url = "https://runner.greentic.local"
+
+[services.runner.service.metrics]
+enabled = true
+bind_addr = "127.0.0.1"
+port = 9090
+path = "/metrics"
+
+[services.deployer]
+kind = "nats"
+url = "nats://nats.greentic.local:4222"
 
 [services.events]
 url = "https://events.greentic.local"

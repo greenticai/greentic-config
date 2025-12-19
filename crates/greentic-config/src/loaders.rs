@@ -71,19 +71,19 @@ pub struct ServicesLayer {
     #[serde(default)]
     pub events: Option<ServiceEndpointLayer>,
     #[serde(default)]
-    pub runner: Option<ServiceTransportLayer>,
+    pub runner: Option<ServiceLayer>,
     #[serde(default)]
-    pub deployer: Option<ServiceTransportLayer>,
+    pub deployer: Option<ServiceLayer>,
     #[serde(default)]
-    pub events_transport: Option<ServiceTransportLayer>,
+    pub events_transport: Option<ServiceLayer>,
     #[serde(default)]
-    pub source: Option<ServiceTransportLayer>,
+    pub source: Option<ServiceLayer>,
     #[serde(default)]
-    pub publish: Option<ServiceTransportLayer>,
+    pub publish: Option<ServiceLayer>,
     #[serde(default)]
-    pub metadata: Option<ServiceTransportLayer>,
+    pub metadata: Option<ServiceLayer>,
     #[serde(default)]
-    pub oauth_broker: Option<ServiceTransportLayer>,
+    pub oauth_broker: Option<ServiceLayer>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -112,6 +112,38 @@ pub struct ServiceTransportLayer {
     pub headers: Option<std::collections::BTreeMap<String, String>>,
     #[serde(default)]
     pub subject_prefix: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ServiceLayer {
+    #[serde(default, flatten)]
+    pub transport: ServiceTransportLayer,
+    #[serde(default)]
+    pub service: Option<ServiceConfigLayer>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct ServiceConfigLayer {
+    #[serde(default)]
+    pub bind_addr: Option<String>,
+    #[serde(default)]
+    pub port: Option<u16>,
+    #[serde(default)]
+    pub public_base_url: Option<String>,
+    #[serde(default)]
+    pub metrics: Option<MetricsLayer>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct MetricsLayer {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub bind_addr: Option<String>,
+    #[serde(default)]
+    pub port: Option<u16>,
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
@@ -376,320 +408,23 @@ fn parse_layer(contents: &str, format: ConfigFileFormat) -> anyhow::Result<Confi
     Ok(layer)
 }
 
-pub fn load_env_layer() -> ConfigLayer {
+pub fn load_env_layer() -> (ConfigLayer, Vec<String>) {
     let mut layer = ConfigLayer::default();
+    let mut warnings = Vec::new();
     for (key, value) in std::env::vars() {
         if !key.starts_with(ENV_PREFIX) {
             continue;
         }
-        match key.as_str() {
-            "GREENTIC_SCHEMA_VERSION" => layer.schema_version = Some(ConfigVersion(value)),
-            "GREENTIC_ENVIRONMENT_ENV_ID" => {
-                layer
-                    .environment
-                    .get_or_insert_with(Default::default)
-                    .env_id = parse_string_as::<EnvId>(&value)
-            }
-            "GREENTIC_ENVIRONMENT_DEPLOYMENT" => {
-                layer
-                    .environment
-                    .get_or_insert_with(Default::default)
-                    .deployment = parse_string_as::<DeploymentCtx>(&value)
-            }
-            "GREENTIC_ENVIRONMENT_CONNECTION" => {
-                layer
-                    .environment
-                    .get_or_insert_with(Default::default)
-                    .connection = parse_string_as::<ConnectionKind>(&value)
-            }
-            "GREENTIC_ENVIRONMENT_REGION" => {
-                layer
-                    .environment
-                    .get_or_insert_with(Default::default)
-                    .region = Some(value)
-            }
-            "GREENTIC_PATHS_GREENTIC_ROOT" => {
-                layer
-                    .paths
-                    .get_or_insert_with(Default::default)
-                    .greentic_root = Some(PathBuf::from(value))
-            }
-            "GREENTIC_PATHS_STATE_DIR" => {
-                layer.paths.get_or_insert_with(Default::default).state_dir =
-                    Some(PathBuf::from(value))
-            }
-            "GREENTIC_PATHS_CACHE_DIR" => {
-                layer.paths.get_or_insert_with(Default::default).cache_dir =
-                    Some(PathBuf::from(value))
-            }
-            "GREENTIC_PATHS_LOGS_DIR" => {
-                layer.paths.get_or_insert_with(Default::default).logs_dir =
-                    Some(PathBuf::from(value))
-            }
-            "GREENTIC_SERVICES_EVENTS_URL" => {
-                layer
-                    .services
-                    .get_or_insert_with(Default::default)
-                    .events
-                    .get_or_insert_with(Default::default)
-                    .url = parse_string_as::<url::Url>(&value)
-            }
-            "GREENTIC_SERVICES_RUNNER_KIND" => {
-                layer
-                    .services
-                    .get_or_insert_with(Default::default)
-                    .runner
-                    .get_or_insert_with(Default::default)
-                    .kind = Some(value.to_lowercase())
-            }
-            "GREENTIC_SERVICES_RUNNER_URL" => {
-                layer
-                    .services
-                    .get_or_insert_with(Default::default)
-                    .runner
-                    .get_or_insert_with(Default::default)
-                    .url = parse_string_as::<url::Url>(&value)
-            }
-            "GREENTIC_SERVICES_DEPLOYER_KIND" => {
-                layer
-                    .services
-                    .get_or_insert_with(Default::default)
-                    .deployer
-                    .get_or_insert_with(Default::default)
-                    .kind = Some(value.to_lowercase())
-            }
-            "GREENTIC_SERVICES_DEPLOYER_URL" => {
-                layer
-                    .services
-                    .get_or_insert_with(Default::default)
-                    .deployer
-                    .get_or_insert_with(Default::default)
-                    .url = parse_string_as::<url::Url>(&value)
-            }
-            "GREENTIC_SERVICES_EVENTS_TRANSPORT_KIND" => {
-                layer
-                    .services
-                    .get_or_insert_with(Default::default)
-                    .events_transport
-                    .get_or_insert_with(Default::default)
-                    .kind = Some(value.to_lowercase())
-            }
-            "GREENTIC_SERVICES_EVENTS_TRANSPORT_URL" => {
-                layer
-                    .services
-                    .get_or_insert_with(Default::default)
-                    .events_transport
-                    .get_or_insert_with(Default::default)
-                    .url = parse_string_as::<url::Url>(&value)
-            }
-            "GREENTIC_SERVICES_SOURCE_KIND" => {
-                layer
-                    .services
-                    .get_or_insert_with(Default::default)
-                    .source
-                    .get_or_insert_with(Default::default)
-                    .kind = Some(value.to_lowercase())
-            }
-            "GREENTIC_SERVICES_SOURCE_URL" => {
-                layer
-                    .services
-                    .get_or_insert_with(Default::default)
-                    .source
-                    .get_or_insert_with(Default::default)
-                    .url = parse_string_as::<url::Url>(&value)
-            }
-            "GREENTIC_SERVICES_PUBLISH_KIND" => {
-                layer
-                    .services
-                    .get_or_insert_with(Default::default)
-                    .publish
-                    .get_or_insert_with(Default::default)
-                    .kind = Some(value.to_lowercase())
-            }
-            "GREENTIC_SERVICES_PUBLISH_URL" => {
-                layer
-                    .services
-                    .get_or_insert_with(Default::default)
-                    .publish
-                    .get_or_insert_with(Default::default)
-                    .url = parse_string_as::<url::Url>(&value)
-            }
-            "GREENTIC_SERVICES_METADATA_KIND" => {
-                layer
-                    .services
-                    .get_or_insert_with(Default::default)
-                    .metadata
-                    .get_or_insert_with(Default::default)
-                    .kind = Some(value.to_lowercase())
-            }
-            "GREENTIC_SERVICES_METADATA_URL" => {
-                layer
-                    .services
-                    .get_or_insert_with(Default::default)
-                    .metadata
-                    .get_or_insert_with(Default::default)
-                    .url = parse_string_as::<url::Url>(&value)
-            }
-            "GREENTIC_SERVICES_OAUTH_BROKER_KIND" => {
-                layer
-                    .services
-                    .get_or_insert_with(Default::default)
-                    .oauth_broker
-                    .get_or_insert_with(Default::default)
-                    .kind = Some(value.to_lowercase())
-            }
-            "GREENTIC_SERVICES_OAUTH_BROKER_URL" => {
-                layer
-                    .services
-                    .get_or_insert_with(Default::default)
-                    .oauth_broker
-                    .get_or_insert_with(Default::default)
-                    .url = parse_string_as::<url::Url>(&value)
-            }
-            "GREENTIC_RUNTIME_MAX_CONCURRENCY" => {
-                layer
-                    .runtime
-                    .get_or_insert_with(Default::default)
-                    .max_concurrency = parse_u32(&value)
-            }
-            "GREENTIC_RUNTIME_TASK_TIMEOUT_MS" => {
-                layer
-                    .runtime
-                    .get_or_insert_with(Default::default)
-                    .task_timeout_ms = parse_u64(&value)
-            }
-            "GREENTIC_RUNTIME_SHUTDOWN_GRACE_MS" => {
-                layer
-                    .runtime
-                    .get_or_insert_with(Default::default)
-                    .shutdown_grace_ms = parse_u64(&value)
-            }
-            "GREENTIC_RUNTIME_ADMIN_SECRETS_EXPLAIN_ENABLED" => {
-                layer
-                    .runtime
-                    .get_or_insert_with(Default::default)
-                    .admin_endpoints
-                    .get_or_insert_with(Default::default)
-                    .secrets_explain_enabled = parse_bool(&value)
-            }
-            "GREENTIC_TELEMETRY_ENABLED" => {
-                layer.telemetry.get_or_insert_with(Default::default).enabled = parse_bool(&value)
-            }
-            "GREENTIC_TELEMETRY_EXPORTER" => {
-                layer
-                    .telemetry
-                    .get_or_insert_with(Default::default)
-                    .exporter = Some(value.to_lowercase())
-            }
-            "GREENTIC_TELEMETRY_ENDPOINT" => {
-                layer
-                    .telemetry
-                    .get_or_insert_with(Default::default)
-                    .endpoint = Some(value)
-            }
-            "GREENTIC_TELEMETRY_SAMPLING" => {
-                layer
-                    .telemetry
-                    .get_or_insert_with(Default::default)
-                    .sampling = parse_f32(&value)
-            }
-            "GREENTIC_NETWORK_PROXY_URL" => {
-                layer.network.get_or_insert_with(Default::default).proxy_url = Some(value)
-            }
-            "GREENTIC_NETWORK_TLS_MODE" => {
-                layer.network.get_or_insert_with(Default::default).tls_mode =
-                    Some(value.to_lowercase())
-            }
-            "GREENTIC_NETWORK_CONNECT_TIMEOUT_MS" => {
-                layer
-                    .network
-                    .get_or_insert_with(Default::default)
-                    .connect_timeout_ms = parse_u64(&value)
-            }
-            "GREENTIC_NETWORK_READ_TIMEOUT_MS" => {
-                layer
-                    .network
-                    .get_or_insert_with(Default::default)
-                    .read_timeout_ms = parse_u64(&value)
-            }
-            "GREENTIC_SECRETS_KIND" => {
-                layer.secrets.get_or_insert_with(Default::default).kind = Some(value)
-            }
-            "GREENTIC_SECRETS_REFERENCE" => {
-                layer.secrets.get_or_insert_with(Default::default).reference = Some(value)
-            }
-            "GREENTIC_DEV_DEFAULT_ENV" => {
-                layer.dev.get_or_insert_with(Default::default).default_env =
-                    parse_string_as::<EnvId>(&value)
-            }
-            "GREENTIC_DEV_DEFAULT_TENANT" => {
-                layer
-                    .dev
-                    .get_or_insert_with(Default::default)
-                    .default_tenant = Some(value)
-            }
-            "GREENTIC_DEV_DEFAULT_TEAM" => {
-                layer.dev.get_or_insert_with(Default::default).default_team = Some(value)
-            }
-            "GREENTIC_EVENTS_RECONNECT_ENABLED" => {
-                layer
-                    .events
-                    .get_or_insert_with(Default::default)
-                    .reconnect
-                    .get_or_insert_with(Default::default)
-                    .enabled = parse_bool(&value)
-            }
-            "GREENTIC_EVENTS_RECONNECT_MAX_RETRIES" => {
-                layer
-                    .events
-                    .get_or_insert_with(Default::default)
-                    .reconnect
-                    .get_or_insert_with(Default::default)
-                    .max_retries = parse_u32(&value)
-            }
-            "GREENTIC_EVENTS_BACKOFF_INITIAL_MS" => {
-                layer
-                    .events
-                    .get_or_insert_with(Default::default)
-                    .backoff
-                    .get_or_insert_with(Default::default)
-                    .initial_ms = parse_u64(&value)
-            }
-            "GREENTIC_EVENTS_BACKOFF_MAX_MS" => {
-                layer
-                    .events
-                    .get_or_insert_with(Default::default)
-                    .backoff
-                    .get_or_insert_with(Default::default)
-                    .max_ms = parse_u64(&value)
-            }
-            "GREENTIC_EVENTS_BACKOFF_MULTIPLIER" => {
-                layer
-                    .events
-                    .get_or_insert_with(Default::default)
-                    .backoff
-                    .get_or_insert_with(Default::default)
-                    .multiplier = parse_f32(&value).map(|v| v as f64)
-            }
-            "GREENTIC_EVENTS_BACKOFF_JITTER" => {
-                layer
-                    .events
-                    .get_or_insert_with(Default::default)
-                    .backoff
-                    .get_or_insert_with(Default::default)
-                    .jitter = parse_bool(&value)
-            }
-            _ => {}
-        }
+        apply_env_var(&key, &value, &mut layer, &mut warnings);
     }
-    layer
+    (layer, warnings)
 }
 
-pub fn load_env_layers_detailed() -> Vec<(ConfigLayer, String)> {
+pub fn load_env_layers_detailed() -> Vec<(ConfigLayer, String, Vec<String>)> {
     load_env_layers_detailed_from(std::env::vars())
 }
 
-pub fn load_env_layers_detailed_from<I>(vars: I) -> Vec<(ConfigLayer, String)>
+pub fn load_env_layers_detailed_from<I>(vars: I) -> Vec<(ConfigLayer, String, Vec<String>)>
 where
     I: IntoIterator<Item = (String, String)>,
 {
@@ -698,15 +433,21 @@ where
         if !key.starts_with(ENV_PREFIX) {
             continue;
         }
-        if let Some(layer) = env_var_to_layer(&key, &value) {
-            layers.push((layer, key));
+        let mut layer = ConfigLayer::default();
+        let mut warnings = Vec::new();
+        if apply_env_var(&key, &value, &mut layer, &mut warnings) {
+            layers.push((layer, key, warnings));
         }
     }
     layers
 }
 
-fn env_var_to_layer(key: &str, value: &str) -> Option<ConfigLayer> {
-    let mut layer = ConfigLayer::default();
+fn apply_env_var(
+    key: &str,
+    value: &str,
+    layer: &mut ConfigLayer,
+    warnings: &mut Vec<String>,
+) -> bool {
     match key {
         "GREENTIC_SCHEMA_VERSION" => layer.schema_version = Some(ConfigVersion(value.to_string())),
         "GREENTIC_ENVIRONMENT_ENV_ID" => {
@@ -762,6 +503,7 @@ fn env_var_to_layer(key: &str, value: &str) -> Option<ConfigLayer> {
                 .get_or_insert_with(Default::default)
                 .runner
                 .get_or_insert_with(Default::default)
+                .transport
                 .kind = Some(value.to_lowercase())
         }
         "GREENTIC_SERVICES_RUNNER_URL" => {
@@ -770,7 +512,86 @@ fn env_var_to_layer(key: &str, value: &str) -> Option<ConfigLayer> {
                 .get_or_insert_with(Default::default)
                 .runner
                 .get_or_insert_with(Default::default)
+                .transport
                 .url = parse_string_as::<url::Url>(value)
+        }
+        "GREENTIC_SERVICES_RUNNER_BIND_ADDR" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .runner
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .bind_addr = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_RUNNER_PORT" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .runner
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .port = parse_u16_warn(value, key, warnings);
+        }
+        "GREENTIC_SERVICES_RUNNER_PUBLIC_BASE_URL" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .runner
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .public_base_url = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_RUNNER_METRICS_ENABLED" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .runner
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .enabled = parse_bool(value);
+        }
+        "GREENTIC_SERVICES_RUNNER_METRICS_BIND_ADDR" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .runner
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .bind_addr = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_RUNNER_METRICS_PORT" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .runner
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .port = parse_u16_warn(value, key, warnings);
+        }
+        "GREENTIC_SERVICES_RUNNER_METRICS_PATH" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .runner
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .path = Some(value.to_string());
         }
         "GREENTIC_SERVICES_DEPLOYER_KIND" => {
             layer
@@ -778,6 +599,7 @@ fn env_var_to_layer(key: &str, value: &str) -> Option<ConfigLayer> {
                 .get_or_insert_with(Default::default)
                 .deployer
                 .get_or_insert_with(Default::default)
+                .transport
                 .kind = Some(value.to_lowercase())
         }
         "GREENTIC_SERVICES_DEPLOYER_URL" => {
@@ -786,7 +608,86 @@ fn env_var_to_layer(key: &str, value: &str) -> Option<ConfigLayer> {
                 .get_or_insert_with(Default::default)
                 .deployer
                 .get_or_insert_with(Default::default)
+                .transport
                 .url = parse_string_as::<url::Url>(value)
+        }
+        "GREENTIC_SERVICES_DEPLOYER_BIND_ADDR" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .deployer
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .bind_addr = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_DEPLOYER_PORT" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .deployer
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .port = parse_u16_warn(value, key, warnings);
+        }
+        "GREENTIC_SERVICES_DEPLOYER_PUBLIC_BASE_URL" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .deployer
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .public_base_url = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_DEPLOYER_METRICS_ENABLED" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .deployer
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .enabled = parse_bool(value);
+        }
+        "GREENTIC_SERVICES_DEPLOYER_METRICS_BIND_ADDR" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .deployer
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .bind_addr = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_DEPLOYER_METRICS_PORT" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .deployer
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .port = parse_u16_warn(value, key, warnings);
+        }
+        "GREENTIC_SERVICES_DEPLOYER_METRICS_PATH" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .deployer
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .path = Some(value.to_string());
         }
         "GREENTIC_SERVICES_EVENTS_TRANSPORT_KIND" => {
             layer
@@ -794,6 +695,7 @@ fn env_var_to_layer(key: &str, value: &str) -> Option<ConfigLayer> {
                 .get_or_insert_with(Default::default)
                 .events_transport
                 .get_or_insert_with(Default::default)
+                .transport
                 .kind = Some(value.to_lowercase())
         }
         "GREENTIC_SERVICES_EVENTS_TRANSPORT_URL" => {
@@ -802,7 +704,86 @@ fn env_var_to_layer(key: &str, value: &str) -> Option<ConfigLayer> {
                 .get_or_insert_with(Default::default)
                 .events_transport
                 .get_or_insert_with(Default::default)
+                .transport
                 .url = parse_string_as::<url::Url>(value)
+        }
+        "GREENTIC_SERVICES_EVENTS_TRANSPORT_BIND_ADDR" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .events_transport
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .bind_addr = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_EVENTS_TRANSPORT_PORT" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .events_transport
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .port = parse_u16_warn(value, key, warnings);
+        }
+        "GREENTIC_SERVICES_EVENTS_TRANSPORT_PUBLIC_BASE_URL" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .events_transport
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .public_base_url = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_EVENTS_TRANSPORT_METRICS_ENABLED" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .events_transport
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .enabled = parse_bool(value);
+        }
+        "GREENTIC_SERVICES_EVENTS_TRANSPORT_METRICS_BIND_ADDR" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .events_transport
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .bind_addr = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_EVENTS_TRANSPORT_METRICS_PORT" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .events_transport
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .port = parse_u16_warn(value, key, warnings);
+        }
+        "GREENTIC_SERVICES_EVENTS_TRANSPORT_METRICS_PATH" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .events_transport
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .path = Some(value.to_string());
         }
         "GREENTIC_SERVICES_SOURCE_KIND" => {
             layer
@@ -810,6 +791,7 @@ fn env_var_to_layer(key: &str, value: &str) -> Option<ConfigLayer> {
                 .get_or_insert_with(Default::default)
                 .source
                 .get_or_insert_with(Default::default)
+                .transport
                 .kind = Some(value.to_lowercase())
         }
         "GREENTIC_SERVICES_SOURCE_URL" => {
@@ -818,7 +800,86 @@ fn env_var_to_layer(key: &str, value: &str) -> Option<ConfigLayer> {
                 .get_or_insert_with(Default::default)
                 .source
                 .get_or_insert_with(Default::default)
+                .transport
                 .url = parse_string_as::<url::Url>(value)
+        }
+        "GREENTIC_SERVICES_SOURCE_BIND_ADDR" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .source
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .bind_addr = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_SOURCE_PORT" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .source
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .port = parse_u16_warn(value, key, warnings);
+        }
+        "GREENTIC_SERVICES_SOURCE_PUBLIC_BASE_URL" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .source
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .public_base_url = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_SOURCE_METRICS_ENABLED" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .source
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .enabled = parse_bool(value);
+        }
+        "GREENTIC_SERVICES_SOURCE_METRICS_BIND_ADDR" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .source
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .bind_addr = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_SOURCE_METRICS_PORT" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .source
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .port = parse_u16_warn(value, key, warnings);
+        }
+        "GREENTIC_SERVICES_SOURCE_METRICS_PATH" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .source
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .path = Some(value.to_string());
         }
         "GREENTIC_SERVICES_PUBLISH_KIND" => {
             layer
@@ -826,6 +887,7 @@ fn env_var_to_layer(key: &str, value: &str) -> Option<ConfigLayer> {
                 .get_or_insert_with(Default::default)
                 .publish
                 .get_or_insert_with(Default::default)
+                .transport
                 .kind = Some(value.to_lowercase())
         }
         "GREENTIC_SERVICES_PUBLISH_URL" => {
@@ -834,7 +896,86 @@ fn env_var_to_layer(key: &str, value: &str) -> Option<ConfigLayer> {
                 .get_or_insert_with(Default::default)
                 .publish
                 .get_or_insert_with(Default::default)
+                .transport
                 .url = parse_string_as::<url::Url>(value)
+        }
+        "GREENTIC_SERVICES_PUBLISH_BIND_ADDR" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .publish
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .bind_addr = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_PUBLISH_PORT" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .publish
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .port = parse_u16_warn(value, key, warnings);
+        }
+        "GREENTIC_SERVICES_PUBLISH_PUBLIC_BASE_URL" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .publish
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .public_base_url = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_PUBLISH_METRICS_ENABLED" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .publish
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .enabled = parse_bool(value);
+        }
+        "GREENTIC_SERVICES_PUBLISH_METRICS_BIND_ADDR" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .publish
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .bind_addr = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_PUBLISH_METRICS_PORT" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .publish
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .port = parse_u16_warn(value, key, warnings);
+        }
+        "GREENTIC_SERVICES_PUBLISH_METRICS_PATH" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .publish
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .path = Some(value.to_string());
         }
         "GREENTIC_SERVICES_METADATA_KIND" => {
             layer
@@ -842,6 +983,7 @@ fn env_var_to_layer(key: &str, value: &str) -> Option<ConfigLayer> {
                 .get_or_insert_with(Default::default)
                 .metadata
                 .get_or_insert_with(Default::default)
+                .transport
                 .kind = Some(value.to_lowercase())
         }
         "GREENTIC_SERVICES_METADATA_URL" => {
@@ -850,7 +992,86 @@ fn env_var_to_layer(key: &str, value: &str) -> Option<ConfigLayer> {
                 .get_or_insert_with(Default::default)
                 .metadata
                 .get_or_insert_with(Default::default)
+                .transport
                 .url = parse_string_as::<url::Url>(value)
+        }
+        "GREENTIC_SERVICES_METADATA_BIND_ADDR" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .metadata
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .bind_addr = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_METADATA_PORT" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .metadata
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .port = parse_u16_warn(value, key, warnings);
+        }
+        "GREENTIC_SERVICES_METADATA_PUBLIC_BASE_URL" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .metadata
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .public_base_url = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_METADATA_METRICS_ENABLED" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .metadata
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .enabled = parse_bool(value);
+        }
+        "GREENTIC_SERVICES_METADATA_METRICS_BIND_ADDR" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .metadata
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .bind_addr = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_METADATA_METRICS_PORT" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .metadata
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .port = parse_u16_warn(value, key, warnings);
+        }
+        "GREENTIC_SERVICES_METADATA_METRICS_PATH" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .metadata
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .path = Some(value.to_string());
         }
         "GREENTIC_SERVICES_OAUTH_BROKER_KIND" => {
             layer
@@ -858,6 +1079,7 @@ fn env_var_to_layer(key: &str, value: &str) -> Option<ConfigLayer> {
                 .get_or_insert_with(Default::default)
                 .oauth_broker
                 .get_or_insert_with(Default::default)
+                .transport
                 .kind = Some(value.to_lowercase())
         }
         "GREENTIC_SERVICES_OAUTH_BROKER_URL" => {
@@ -866,7 +1088,86 @@ fn env_var_to_layer(key: &str, value: &str) -> Option<ConfigLayer> {
                 .get_or_insert_with(Default::default)
                 .oauth_broker
                 .get_or_insert_with(Default::default)
+                .transport
                 .url = parse_string_as::<url::Url>(value)
+        }
+        "GREENTIC_SERVICES_OAUTH_BROKER_BIND_ADDR" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .oauth_broker
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .bind_addr = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_OAUTH_BROKER_PORT" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .oauth_broker
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .port = parse_u16_warn(value, key, warnings);
+        }
+        "GREENTIC_SERVICES_OAUTH_BROKER_PUBLIC_BASE_URL" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .oauth_broker
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .public_base_url = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_OAUTH_BROKER_METRICS_ENABLED" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .oauth_broker
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .enabled = parse_bool(value);
+        }
+        "GREENTIC_SERVICES_OAUTH_BROKER_METRICS_BIND_ADDR" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .oauth_broker
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .bind_addr = Some(value.to_string());
+        }
+        "GREENTIC_SERVICES_OAUTH_BROKER_METRICS_PORT" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .oauth_broker
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .port = parse_u16_warn(value, key, warnings);
+        }
+        "GREENTIC_SERVICES_OAUTH_BROKER_METRICS_PATH" => {
+            layer
+                .services
+                .get_or_insert_with(Default::default)
+                .oauth_broker
+                .get_or_insert_with(Default::default)
+                .service
+                .get_or_insert_with(Default::default)
+                .metrics
+                .get_or_insert_with(Default::default)
+                .path = Some(value.to_string());
         }
         "GREENTIC_RUNTIME_MAX_CONCURRENCY" => {
             layer
@@ -1000,9 +1301,9 @@ fn env_var_to_layer(key: &str, value: &str) -> Option<ConfigLayer> {
                 .get_or_insert_with(Default::default)
                 .jitter = parse_bool(value)
         }
-        _ => return None,
+        _ => return false,
     }
-    Some(layer)
+    true
 }
 
 fn parse_string_as<T: for<'de> Deserialize<'de>>(value: &str) -> Option<T> {
@@ -1027,6 +1328,16 @@ fn parse_u32(value: &str) -> Option<u32> {
 
 fn parse_f32(value: &str) -> Option<f32> {
     value.parse::<f32>().ok()
+}
+
+fn parse_u16_warn(value: &str, key: &str, warnings: &mut Vec<String>) -> Option<u16> {
+    match value.parse::<u16>() {
+        Ok(v) => Some(v),
+        Err(_) => {
+            warnings.push(format!("Ignored {key}: expected u16 but got '{value}'"));
+            None
+        }
+    }
 }
 
 pub(crate) fn default_env_id() -> EnvId {

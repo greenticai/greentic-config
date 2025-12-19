@@ -76,12 +76,11 @@ pub struct ServicesConfig {
     #[serde(default)]
     pub events: Option<ServiceEndpointConfig>,
 
-    // --- Additive service transport selectors (non-breaking) ---
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub runner: Option<ServiceTransportConfig>,
+    pub runner: Option<ServiceDefinitionConfig>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub deployer: Option<ServiceTransportConfig>,
+    pub deployer: Option<ServiceDefinitionConfig>,
 
     /// Transport selector for events.
     ///
@@ -89,21 +88,22 @@ pub struct ServicesConfig {
     /// - `services.events` preserves the legacy HTTP-only endpoint shape.
     /// - New consumers should prefer `services.events_transport`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub events_transport: Option<ServiceTransportConfig>,
+    pub events_transport: Option<ServiceDefinitionConfig>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub source: Option<ServiceTransportConfig>,
+    pub source: Option<ServiceDefinitionConfig>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub publish: Option<ServiceTransportConfig>,
+    pub publish: Option<ServiceDefinitionConfig>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub metadata: Option<ServiceTransportConfig>,
+    pub metadata: Option<ServiceDefinitionConfig>,
 
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub oauth_broker: Option<ServiceTransportConfig>,
+    pub oauth_broker: Option<ServiceDefinitionConfig>,
 }
 
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ServiceEndpointConfig {
     pub url: Url,
@@ -113,6 +113,81 @@ pub struct ServiceEndpointConfig {
 
 // --- Services transport (non-secret) ---
 
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ServiceDefinitionConfig {
+    pub transport: Option<ServiceTransportConfig>,
+    pub service: Option<ServiceConfig>,
+}
+
+impl Serialize for ServiceDefinitionConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        if self.service.is_none() && self.transport.is_some() {
+            return self
+                .transport
+                .as_ref()
+                .expect("checked is_some")
+                .serialize(serializer);
+        }
+
+        let mut map = serde_json::Map::new();
+        if let Some(transport) = &self.transport {
+            let value = serde_json::to_value(transport).map_err(serde::ser::Error::custom)?;
+            let obj = value
+                .as_object()
+                .ok_or_else(|| serde::ser::Error::custom("expected map for transport"))?;
+            for (k, v) in obj {
+                map.insert(k.clone(), v.clone());
+            }
+        }
+        if let Some(service) = &self.service {
+            map.insert(
+                "service".to_string(),
+                serde_json::to_value(service).map_err(serde::ser::Error::custom)?,
+            );
+        }
+        map.serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ServiceDefinitionConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = serde_json::Value::deserialize(deserializer)?;
+
+        if let serde_json::Value::Object(mut map) = value {
+            let service = if let Some(service_value) = map.remove("service") {
+                Some(ServiceConfig::deserialize(service_value).map_err(serde::de::Error::custom)?)
+            } else {
+                None
+            };
+
+            let transport = if map.is_empty() {
+                None
+            } else {
+                let transport_value = serde_json::Value::Object(map);
+                ServiceTransportConfig::deserialize(transport_value).ok()
+            };
+
+            return Ok(ServiceDefinitionConfig { transport, service });
+        }
+
+        // Fallback to transport-only shape
+        let transport = ServiceTransportConfig::deserialize(value).ok();
+
+        Ok(ServiceDefinitionConfig {
+            transport,
+            service: None,
+        })
+    }
+}
+
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum ServiceTransportConfig {
@@ -135,6 +210,32 @@ pub enum ServiceTransportConfig {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         subject_prefix: Option<String>,
     },
+}
+
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ServiceConfig {
+    #[serde(default)]
+    pub bind_addr: Option<String>,
+    #[serde(default)]
+    pub port: Option<u16>,
+    #[serde(default)]
+    pub public_base_url: Option<String>,
+    #[serde(default)]
+    pub metrics: Option<MetricsConfig>,
+}
+
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct MetricsConfig {
+    #[serde(default)]
+    pub enabled: Option<bool>,
+    #[serde(default)]
+    pub bind_addr: Option<String>,
+    #[serde(default)]
+    pub port: Option<u16>,
+    #[serde(default)]
+    pub path: Option<String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -348,10 +449,29 @@ state_dir = "/workspace/.greentic"
 cache_dir = "/workspace/.greentic/cache"
 logs_dir = "/workspace/.greentic/logs"
 
-[services]
-runner = { kind = "http", url = "https://runner.greentic.local", headers = { "x-routing-key" = "tenant-1" } }
-deployer = { kind = "nats", url = "nats://nats.greentic.local:4222", subject_prefix = "greentic" }
-metadata = { kind = "noop" }
+[services.runner]
+kind = "http"
+url = "https://runner.greentic.local"
+headers = { "x-routing-key" = "tenant-1" }
+
+[services.runner.service]
+bind_addr = "0.0.0.0"
+port = 8080
+public_base_url = "https://runner-public.greentic.local"
+
+[services.runner.service.metrics]
+enabled = true
+bind_addr = "127.0.0.1"
+port = 9090
+path = "/metrics"
+
+[services.deployer]
+kind = "nats"
+url = "nats://nats.greentic.local:4222"
+subject_prefix = "greentic"
+
+[services.metadata]
+kind = "noop"
 
 [services.events]
 url = "https://events.greentic.local"
@@ -423,6 +543,24 @@ default_team = "devex"
         let serialized = toml::to_string(&config).expect("serialize");
         let config_back: GreenticConfig = toml::from_str(&serialized).expect("deserialize again");
         assert_eq!(config, config_back);
+
+        let runner = config_back
+            .services
+            .as_ref()
+            .and_then(|s| s.runner.as_ref())
+            .expect("runner present");
+        let service = runner.service.as_ref().expect("service binding present");
+        assert_eq!(service.bind_addr.as_deref(), Some("0.0.0.0"));
+        assert_eq!(service.port, Some(8080));
+        assert_eq!(
+            service.public_base_url.as_deref(),
+            Some("https://runner-public.greentic.local")
+        );
+        let metrics = service.metrics.as_ref().expect("metrics present");
+        assert_eq!(metrics.enabled, Some(true));
+        assert_eq!(metrics.bind_addr.as_deref(), Some("127.0.0.1"));
+        assert_eq!(metrics.port, Some(9090));
+        assert_eq!(metrics.path.as_deref(), Some("/metrics"));
     }
 
     #[test]
@@ -442,9 +580,22 @@ default_team = "devex"
                     "url": "https://events.greentic.local",
                     "headers": {"x-routing-key": "tenant-1"}
                 },
-                "runner": {"kind": "http", "url": "https://runner.greentic.local", "headers": {"x-routing-key": "tenant-1"}},
-                "deployer": {"kind": "nats", "url": "nats://nats.greentic.local:4222", "subject_prefix": "greentic"},
-                "metadata": {"kind": "noop"}
+                "runner": {
+                    "transport": {"kind": "http", "url": "https://runner.greentic.local", "headers": {"x-routing-key": "tenant-1"}},
+                    "service": {
+                        "bind_addr": "0.0.0.0",
+                        "port": 8080,
+                        "public_base_url": "https://runner-public.greentic.local",
+                        "metrics": {
+                            "enabled": true,
+                            "bind_addr": "127.0.0.1",
+                            "port": 9090,
+                            "path": "/metrics"
+                        }
+                    }
+                },
+                "deployer": {"transport": {"kind": "nats", "url": "nats://nats.greentic.local:4222", "subject_prefix": "greentic"}},
+                "metadata": {"transport": {"kind": "noop"}}
             },
             "events": {
                 "reconnect": {"enabled": true, "max_retries": 10},
@@ -469,6 +620,36 @@ default_team = "devex"
         let serialized = serde_json::to_string(&config).expect("json encode");
         let round: GreenticConfig = serde_json::from_str(&serialized).expect("json decode round");
         assert_eq!(config, round);
+
+        let runner = round
+            .services
+            .as_ref()
+            .and_then(|s| s.runner.as_ref())
+            .expect("runner present");
+        let service = runner.service.as_ref().expect("service binding present");
+        assert_eq!(service.port, Some(8080));
+    }
+
+    #[test]
+    fn service_definition_accepts_transport_only_shape() {
+        let services: ServicesConfig = toml::from_str(
+            r#"
+[runner]
+kind = "http"
+url = "https://runner.greentic.local"
+            "#,
+        )
+        .expect("deserialize runner");
+
+        let runner = services.runner.expect("runner");
+        assert!(runner.service.is_none());
+        let transport = runner.transport.expect("transport");
+        match transport {
+            ServiceTransportConfig::Http { url, .. } => {
+                assert_eq!(url.as_str(), "https://runner.greentic.local/")
+            }
+            other => panic!("unexpected variant {other:?}"),
+        }
     }
 
     #[test]

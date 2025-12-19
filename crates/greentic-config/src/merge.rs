@@ -1,16 +1,18 @@
 use crate::loaders::ConfigLayer;
 use crate::loaders::{
-    DEFAULT_DEPLOYER_BASE_DOMAIN, EnvironmentLayer, PackSourceLayer, PacksLayer,
-    ServiceEndpointLayer, ServiceTransportLayer, ServicesLayer, default_env_id,
+    DEFAULT_DEPLOYER_BASE_DOMAIN, EnvironmentLayer, MetricsLayer, PackSourceLayer, PacksLayer,
+    ServiceConfigLayer, ServiceEndpointLayer, ServiceLayer, ServiceTransportLayer, ServicesLayer,
+    default_env_id,
 };
 use crate::paths::DefaultPaths;
 use crate::{ProvenanceMap, ProvenanceMapDetailed, ProvenanceRecord};
 use greentic_config_types::{
     BackoffConfig, ConfigSource, ConfigVersion, DeployerConfig, DeployerProviderDefaults,
-    DevConfig, EnvironmentConfig, EventsConfig, GreenticConfig, NetworkConfig, PackSourceConfig,
-    PackTrustConfig, PacksConfig, PathsConfig, ProvenancePath, ReconnectConfig, RuntimeConfig,
-    SecretsBackendRefConfig, ServiceEndpointConfig, ServiceTransportConfig, ServicesConfig,
-    TelemetryConfig, TelemetryExporterKind, TlsMode,
+    DevConfig, EnvironmentConfig, EventsConfig, GreenticConfig, MetricsConfig, NetworkConfig,
+    PackSourceConfig, PackTrustConfig, PacksConfig, PathsConfig, ProvenancePath, ReconnectConfig,
+    RuntimeConfig, SecretsBackendRefConfig, ServiceConfig, ServiceDefinitionConfig,
+    ServiceEndpointConfig, ServiceTransportConfig, ServicesConfig, TelemetryConfig,
+    TelemetryExporterKind, TlsMode,
 };
 use std::path::PathBuf;
 
@@ -124,74 +126,53 @@ impl MergeState {
                 "services.events.headers",
                 &source,
             );
-            merge_transport(
+            merge_service(
                 &mut target.runner,
                 services.runner,
                 &mut self.provenance,
-                "services.runner.kind",
-                "services.runner.url",
-                "services.runner.headers",
-                "services.runner.subject_prefix",
+                "services.runner",
                 &source,
             );
-            merge_transport(
+            merge_service(
                 &mut target.deployer,
                 services.deployer,
                 &mut self.provenance,
-                "services.deployer.kind",
-                "services.deployer.url",
-                "services.deployer.headers",
-                "services.deployer.subject_prefix",
+                "services.deployer",
                 &source,
             );
-            merge_transport(
+            merge_service(
                 &mut target.events_transport,
                 services.events_transport,
                 &mut self.provenance,
-                "services.events_transport.kind",
-                "services.events_transport.url",
-                "services.events_transport.headers",
-                "services.events_transport.subject_prefix",
+                "services.events_transport",
                 &source,
             );
-            merge_transport(
+            merge_service(
                 &mut target.source,
                 services.source,
                 &mut self.provenance,
-                "services.source.kind",
-                "services.source.url",
-                "services.source.headers",
-                "services.source.subject_prefix",
+                "services.source",
                 &source,
             );
-            merge_transport(
+            merge_service(
                 &mut target.publish,
                 services.publish,
                 &mut self.provenance,
-                "services.publish.kind",
-                "services.publish.url",
-                "services.publish.headers",
-                "services.publish.subject_prefix",
+                "services.publish",
                 &source,
             );
-            merge_transport(
+            merge_service(
                 &mut target.metadata,
                 services.metadata,
                 &mut self.provenance,
-                "services.metadata.kind",
-                "services.metadata.url",
-                "services.metadata.headers",
-                "services.metadata.subject_prefix",
+                "services.metadata",
                 &source,
             );
-            merge_transport(
+            merge_service(
                 &mut target.oauth_broker,
                 services.oauth_broker,
                 &mut self.provenance,
-                "services.oauth_broker.kind",
-                "services.oauth_broker.url",
-                "services.oauth_broker.headers",
-                "services.oauth_broker.subject_prefix",
+                "services.oauth_broker",
                 &source,
             );
         }
@@ -668,92 +649,246 @@ fn merge_service_endpoint_detailed(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn merge_transport(
-    target: &mut Option<ServiceTransportLayer>,
-    incoming: Option<ServiceTransportLayer>,
+fn merge_service(
+    target: &mut Option<ServiceLayer>,
+    incoming: Option<ServiceLayer>,
     provenance: &mut ProvenanceMap,
-    kind_path: &str,
-    url_path: &str,
-    headers_path: &str,
-    subject_prefix_path: &str,
+    prefix: &str,
     source: &ConfigSource,
 ) {
-    if let Some(transport) = incoming {
-        let target_transport = target.get_or_insert_with(Default::default);
-        set_field(
-            &mut target_transport.kind,
-            transport.kind,
+    if let Some(service) = incoming {
+        let target_service = target.get_or_insert_with(Default::default);
+        merge_transport_fields(
+            &mut target_service.transport,
+            service.transport,
             provenance,
-            kind_path,
+            prefix,
             source,
         );
-        set_field(
-            &mut target_transport.url,
-            transport.url,
-            provenance,
-            url_path,
-            source,
-        );
-        set_field(
-            &mut target_transport.headers,
-            transport.headers,
-            provenance,
-            headers_path,
-            source,
-        );
-        set_field(
-            &mut target_transport.subject_prefix,
-            transport.subject_prefix,
-            provenance,
-            subject_prefix_path,
-            source,
-        );
+        if let Some(binding) = service.service {
+            let binding_target = target_service.service.get_or_insert_with(Default::default);
+            set_field(
+                &mut binding_target.bind_addr,
+                binding.bind_addr,
+                provenance,
+                &format!("{prefix}.service.bind_addr"),
+                source,
+            );
+            set_field(
+                &mut binding_target.port,
+                binding.port,
+                provenance,
+                &format!("{prefix}.service.port"),
+                source,
+            );
+            set_field(
+                &mut binding_target.public_base_url,
+                binding.public_base_url,
+                provenance,
+                &format!("{prefix}.service.public_base_url"),
+                source,
+            );
+            if let Some(metrics) = binding.metrics {
+                let metrics_target = binding_target.metrics.get_or_insert_with(Default::default);
+                merge_metrics(metrics_target, metrics, provenance, prefix, source);
+            }
+        }
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-fn merge_transport_detailed(
-    target: &mut Option<ServiceTransportLayer>,
-    incoming: Option<ServiceTransportLayer>,
+fn merge_metrics(
+    target: &mut MetricsLayer,
+    incoming: MetricsLayer,
+    provenance: &mut ProvenanceMap,
+    prefix: &str,
+    source: &ConfigSource,
+) {
+    set_field(
+        &mut target.enabled,
+        incoming.enabled,
+        provenance,
+        &format!("{prefix}.service.metrics.enabled"),
+        source,
+    );
+    set_field(
+        &mut target.bind_addr,
+        incoming.bind_addr,
+        provenance,
+        &format!("{prefix}.service.metrics.bind_addr"),
+        source,
+    );
+    set_field(
+        &mut target.port,
+        incoming.port,
+        provenance,
+        &format!("{prefix}.service.metrics.port"),
+        source,
+    );
+    set_field(
+        &mut target.path,
+        incoming.path,
+        provenance,
+        &format!("{prefix}.service.metrics.path"),
+        source,
+    );
+}
+
+fn merge_transport_fields(
+    target: &mut ServiceTransportLayer,
+    incoming: ServiceTransportLayer,
+    provenance: &mut ProvenanceMap,
+    prefix: &str,
+    source: &ConfigSource,
+) {
+    set_field(
+        &mut target.kind,
+        incoming.kind,
+        provenance,
+        &format!("{prefix}.kind"),
+        source,
+    );
+    set_field(
+        &mut target.url,
+        incoming.url,
+        provenance,
+        &format!("{prefix}.url"),
+        source,
+    );
+    set_field(
+        &mut target.headers,
+        incoming.headers,
+        provenance,
+        &format!("{prefix}.headers"),
+        source,
+    );
+    set_field(
+        &mut target.subject_prefix,
+        incoming.subject_prefix,
+        provenance,
+        &format!("{prefix}.subject_prefix"),
+        source,
+    );
+}
+
+fn merge_service_detailed(
+    target: &mut Option<ServiceLayer>,
+    incoming: Option<ServiceLayer>,
     provenance: &mut ProvenanceMapDetailed,
-    kind_path: &str,
-    url_path: &str,
-    headers_path: &str,
-    subject_prefix_path: &str,
+    prefix: &str,
     ctx: &ProvenanceCtx,
 ) {
-    if let Some(transport) = incoming {
-        let target_transport = target.get_or_insert_with(Default::default);
-        set_field_detailed(
-            &mut target_transport.kind,
-            transport.kind,
+    if let Some(service) = incoming {
+        let target_service = target.get_or_insert_with(Default::default);
+        merge_transport_fields_detailed(
+            &mut target_service.transport,
+            service.transport,
             provenance,
-            kind_path,
+            prefix,
             ctx,
         );
-        set_field_detailed(
-            &mut target_transport.url,
-            transport.url,
-            provenance,
-            url_path,
-            ctx,
-        );
-        set_field_detailed(
-            &mut target_transport.headers,
-            transport.headers,
-            provenance,
-            headers_path,
-            ctx,
-        );
-        set_field_detailed(
-            &mut target_transport.subject_prefix,
-            transport.subject_prefix,
-            provenance,
-            subject_prefix_path,
-            ctx,
-        );
+        if let Some(binding) = service.service {
+            let binding_target = target_service.service.get_or_insert_with(Default::default);
+            set_field_detailed(
+                &mut binding_target.bind_addr,
+                binding.bind_addr,
+                provenance,
+                &format!("{prefix}.service.bind_addr"),
+                ctx,
+            );
+            set_field_detailed(
+                &mut binding_target.port,
+                binding.port,
+                provenance,
+                &format!("{prefix}.service.port"),
+                ctx,
+            );
+            set_field_detailed(
+                &mut binding_target.public_base_url,
+                binding.public_base_url,
+                provenance,
+                &format!("{prefix}.service.public_base_url"),
+                ctx,
+            );
+            if let Some(metrics) = binding.metrics {
+                let metrics_target = binding_target.metrics.get_or_insert_with(Default::default);
+                merge_metrics_detailed(metrics_target, metrics, provenance, prefix, ctx);
+            }
+        }
     }
+}
+
+fn merge_metrics_detailed(
+    target: &mut MetricsLayer,
+    incoming: MetricsLayer,
+    provenance: &mut ProvenanceMapDetailed,
+    prefix: &str,
+    ctx: &ProvenanceCtx,
+) {
+    set_field_detailed(
+        &mut target.enabled,
+        incoming.enabled,
+        provenance,
+        &format!("{prefix}.service.metrics.enabled"),
+        ctx,
+    );
+    set_field_detailed(
+        &mut target.bind_addr,
+        incoming.bind_addr,
+        provenance,
+        &format!("{prefix}.service.metrics.bind_addr"),
+        ctx,
+    );
+    set_field_detailed(
+        &mut target.port,
+        incoming.port,
+        provenance,
+        &format!("{prefix}.service.metrics.port"),
+        ctx,
+    );
+    set_field_detailed(
+        &mut target.path,
+        incoming.path,
+        provenance,
+        &format!("{prefix}.service.metrics.path"),
+        ctx,
+    );
+}
+
+fn merge_transport_fields_detailed(
+    target: &mut ServiceTransportLayer,
+    incoming: ServiceTransportLayer,
+    provenance: &mut ProvenanceMapDetailed,
+    prefix: &str,
+    ctx: &ProvenanceCtx,
+) {
+    set_field_detailed(
+        &mut target.kind,
+        incoming.kind,
+        provenance,
+        &format!("{prefix}.kind"),
+        ctx,
+    );
+    set_field_detailed(
+        &mut target.url,
+        incoming.url,
+        provenance,
+        &format!("{prefix}.url"),
+        ctx,
+    );
+    set_field_detailed(
+        &mut target.headers,
+        incoming.headers,
+        provenance,
+        &format!("{prefix}.headers"),
+        ctx,
+    );
+    set_field_detailed(
+        &mut target.subject_prefix,
+        incoming.subject_prefix,
+        provenance,
+        &format!("{prefix}.subject_prefix"),
+        ctx,
+    );
 }
 
 pub struct MergeStateDetailed {
@@ -859,74 +994,53 @@ impl MergeStateDetailed {
                 "services.events.headers",
                 &ctx,
             );
-            merge_transport_detailed(
+            merge_service_detailed(
                 &mut target.runner,
                 services.runner,
                 &mut self.provenance,
-                "services.runner.kind",
-                "services.runner.url",
-                "services.runner.headers",
-                "services.runner.subject_prefix",
+                "services.runner",
                 &ctx,
             );
-            merge_transport_detailed(
+            merge_service_detailed(
                 &mut target.deployer,
                 services.deployer,
                 &mut self.provenance,
-                "services.deployer.kind",
-                "services.deployer.url",
-                "services.deployer.headers",
-                "services.deployer.subject_prefix",
+                "services.deployer",
                 &ctx,
             );
-            merge_transport_detailed(
+            merge_service_detailed(
                 &mut target.events_transport,
                 services.events_transport,
                 &mut self.provenance,
-                "services.events_transport.kind",
-                "services.events_transport.url",
-                "services.events_transport.headers",
-                "services.events_transport.subject_prefix",
+                "services.events_transport",
                 &ctx,
             );
-            merge_transport_detailed(
+            merge_service_detailed(
                 &mut target.source,
                 services.source,
                 &mut self.provenance,
-                "services.source.kind",
-                "services.source.url",
-                "services.source.headers",
-                "services.source.subject_prefix",
+                "services.source",
                 &ctx,
             );
-            merge_transport_detailed(
+            merge_service_detailed(
                 &mut target.publish,
                 services.publish,
                 &mut self.provenance,
-                "services.publish.kind",
-                "services.publish.url",
-                "services.publish.headers",
-                "services.publish.subject_prefix",
+                "services.publish",
                 &ctx,
             );
-            merge_transport_detailed(
+            merge_service_detailed(
                 &mut target.metadata,
                 services.metadata,
                 &mut self.provenance,
-                "services.metadata.kind",
-                "services.metadata.url",
-                "services.metadata.headers",
-                "services.metadata.subject_prefix",
+                "services.metadata",
                 &ctx,
             );
-            merge_transport_detailed(
+            merge_service_detailed(
                 &mut target.oauth_broker,
                 services.oauth_broker,
                 &mut self.provenance,
-                "services.oauth_broker.kind",
-                "services.oauth_broker.url",
-                "services.oauth_broker.headers",
-                "services.oauth_broker.subject_prefix",
+                "services.oauth_broker",
                 &ctx,
             );
         }
@@ -1452,17 +1566,20 @@ fn finalize_services(services_layer: ServicesLayer) -> anyhow::Result<Option<Ser
         any = true;
     }
 
-    services.runner = finalize_transport("services.runner", services_layer.runner, &mut any)?;
-    services.deployer = finalize_transport("services.deployer", services_layer.deployer, &mut any)?;
-    services.events_transport = finalize_transport(
+    services.runner = finalize_service_entry("services.runner", services_layer.runner, &mut any)?;
+    services.deployer =
+        finalize_service_entry("services.deployer", services_layer.deployer, &mut any)?;
+    services.events_transport = finalize_service_entry(
         "services.events_transport",
         services_layer.events_transport,
         &mut any,
     )?;
-    services.source = finalize_transport("services.source", services_layer.source, &mut any)?;
-    services.publish = finalize_transport("services.publish", services_layer.publish, &mut any)?;
-    services.metadata = finalize_transport("services.metadata", services_layer.metadata, &mut any)?;
-    services.oauth_broker = finalize_transport(
+    services.source = finalize_service_entry("services.source", services_layer.source, &mut any)?;
+    services.publish =
+        finalize_service_entry("services.publish", services_layer.publish, &mut any)?;
+    services.metadata =
+        finalize_service_entry("services.metadata", services_layer.metadata, &mut any)?;
+    services.oauth_broker = finalize_service_entry(
         "services.oauth_broker",
         services_layer.oauth_broker,
         &mut any,
@@ -1471,15 +1588,75 @@ fn finalize_services(services_layer: ServicesLayer) -> anyhow::Result<Option<Ser
     if any { Ok(Some(services)) } else { Ok(None) }
 }
 
-fn finalize_transport(
+fn finalize_service_entry(
     service_name: &str,
-    transport: Option<ServiceTransportLayer>,
+    layer: Option<ServiceLayer>,
     any: &mut bool,
-) -> anyhow::Result<Option<ServiceTransportConfig>> {
-    let Some(layer) = transport else {
+) -> anyhow::Result<Option<ServiceDefinitionConfig>> {
+    let Some(layer) = layer else {
         return Ok(None);
     };
-    let kind_raw = layer.kind.ok_or_else(|| {
+
+    let transport = finalize_transport(service_name, layer.transport, any)?;
+    let service = finalize_service_binding(layer.service);
+
+    if transport.is_none() && service.is_none() {
+        return Ok(None);
+    }
+
+    *any = true;
+    Ok(Some(ServiceDefinitionConfig { transport, service }))
+}
+
+fn finalize_service_binding(binding: Option<ServiceConfigLayer>) -> Option<ServiceConfig> {
+    let binding = binding?;
+    let metrics = finalize_metrics(binding.metrics);
+    let service = ServiceConfig {
+        bind_addr: binding.bind_addr,
+        port: binding.port,
+        public_base_url: binding.public_base_url,
+        metrics,
+    };
+
+    if service.bind_addr.is_some()
+        || service.port.is_some()
+        || service.public_base_url.is_some()
+        || service.metrics.is_some()
+    {
+        Some(service)
+    } else {
+        None
+    }
+}
+
+fn finalize_metrics(metrics: Option<MetricsLayer>) -> Option<MetricsConfig> {
+    let metrics = metrics?;
+    let metrics_cfg = MetricsConfig {
+        enabled: metrics.enabled,
+        bind_addr: metrics.bind_addr,
+        port: metrics.port,
+        path: metrics.path,
+    };
+    if metrics_cfg.enabled.is_some()
+        || metrics_cfg.bind_addr.is_some()
+        || metrics_cfg.port.is_some()
+        || metrics_cfg.path.is_some()
+    {
+        Some(metrics_cfg)
+    } else {
+        None
+    }
+}
+
+fn finalize_transport(
+    service_name: &str,
+    transport: ServiceTransportLayer,
+    any: &mut bool,
+) -> anyhow::Result<Option<ServiceTransportConfig>> {
+    if !transport_layer_present(&transport) {
+        return Ok(None);
+    }
+    let kind_raw = transport.kind.ok_or_else(|| {
         anyhow::anyhow!("{service_name}.kind is required when configuring a transport")
     })?;
     let kind = kind_raw.to_ascii_lowercase();
@@ -1487,21 +1664,21 @@ fn finalize_transport(
     let config = match kind.as_str() {
         "noop" => ServiceTransportConfig::Noop,
         "http" => {
-            let url = layer.url.ok_or_else(|| {
+            let url = transport.url.ok_or_else(|| {
                 anyhow::anyhow!("{service_name}.url is required for http transport")
             })?;
             ServiceTransportConfig::Http {
                 url,
-                headers: layer.headers,
+                headers: transport.headers,
             }
         }
         "nats" => {
-            let url = layer.url.ok_or_else(|| {
+            let url = transport.url.ok_or_else(|| {
                 anyhow::anyhow!("{service_name}.url is required for nats transport")
             })?;
             ServiceTransportConfig::Nats {
                 url,
-                subject_prefix: layer.subject_prefix,
+                subject_prefix: transport.subject_prefix,
             }
         }
         other => {
@@ -1513,6 +1690,13 @@ fn finalize_transport(
 
     *any = true;
     Ok(Some(config))
+}
+
+fn transport_layer_present(layer: &ServiceTransportLayer) -> bool {
+    layer.kind.is_some()
+        || layer.url.is_some()
+        || layer.headers.is_some()
+        || layer.subject_prefix.is_some()
 }
 
 fn make_absolute(path: PathBuf, defaults: &DefaultPaths) -> PathBuf {
