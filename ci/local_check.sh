@@ -240,8 +240,12 @@ should_run_package() {
   return 1
 }
 
+package_prereqs_met() {
+  should_run_package && ensure_tools cargo
+}
+
 if run_or_skip "cargo package dry-run (requires jq or python3 and LOCAL_CHECK_PACKAGE=1)" \
-  should_run_package && ensure_tools cargo; then
+  package_prereqs_met; then
   package_publishable_crates
 fi
 
@@ -263,8 +267,12 @@ should_run_tarpaulin() {
   return 1
 }
 
+tarpaulin_prereqs_met() {
+  should_run_tarpaulin && ensure_tools cargo cargo-tarpaulin
+}
+
 if run_or_skip "cargo tarpaulin coverage (requires cargo-tarpaulin and LOCAL_CHECK_COVERAGE=1)" \
-  should_run_tarpaulin && ensure_tools cargo cargo-tarpaulin; then
+  tarpaulin_prereqs_met; then
   run_tarpaulin
 fi
 
