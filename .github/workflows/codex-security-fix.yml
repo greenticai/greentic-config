@@ -117,8 +117,18 @@ jobs:
             cat pr-vulnerable-changes.json >> codex-prompt.txt
           fi
 
+      - name: Check API key availability
+        id: check_key
+        run: |
+          if [ -n "${{ secrets.OPENAI_API_KEY }}" ] || [ -n "${{ secrets.CODEX_OPENAI_API_KEY }}" ]; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Skipping Codex remediation — no OPENAI_API_KEY or CODEX_OPENAI_API_KEY secret configured"
+          fi
+
       - name: Run Codex remediation
-        if: steps.alerts.outputs.count != '0' || github.event_name == 'pull_request'
+        if: (steps.alerts.outputs.count != '0' || github.event_name == 'pull_request') && steps.check_key.outputs.available == 'true'
         uses: openai/codex-action@v1
         with:
           openai-api-key: ${{ secrets.OPENAI_API_KEY || secrets.CODEX_OPENAI_API_KEY }}
@@ -126,7 +136,7 @@ jobs:
           codex-args: '["--full-auto"]'
 
       - name: Commit and push fixes
-        if: (steps.alerts.outputs.count != '0' || github.event_name == 'pull_request')
+        if: (steps.alerts.outputs.count != '0' || github.event_name == 'pull_request') && steps.check_key.outputs.available == 'true'
         env:
           BRANCH: ${{ github.event.pull_request.head.ref || github.event.inputs.branch }}
         run: |

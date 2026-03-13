@@ -129,12 +129,10 @@ impl Serialize for ServiceDefinitionConfig {
     where
         S: serde::Serializer,
     {
-        if self.service.is_none() && self.transport.is_some() {
-            return self
-                .transport
-                .as_ref()
-                .expect("checked is_some")
-                .serialize(serializer);
+        if self.service.is_none()
+            && let Some(transport) = &self.transport
+        {
+            return transport.serialize(serializer);
         }
 
         let mut map = serde_json::Map::new();
@@ -352,6 +350,9 @@ fn default_sampling() -> f32 {
 pub enum TelemetryExporterKind {
     Otlp,
     Stdout,
+    Gcp,
+    Azure,
+    Aws,
     #[default]
     None,
 }
