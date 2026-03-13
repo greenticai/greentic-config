@@ -352,6 +352,9 @@ fn default_sampling() -> f32 {
 pub enum TelemetryExporterKind {
     Otlp,
     Stdout,
+    Gcp,
+    Azure,
+    Aws,
     #[default]
     None,
 }

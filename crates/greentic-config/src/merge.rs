@@ -1711,6 +1711,9 @@ fn parse_exporter(raw: Option<String>) -> (TelemetryExporterKind, Option<String>
     match raw.as_deref() {
         Some("otlp") => (TelemetryExporterKind::Otlp, None),
         Some("stdout") => (TelemetryExporterKind::Stdout, None),
+        Some("gcp") => (TelemetryExporterKind::Gcp, None),
+        Some("azure") => (TelemetryExporterKind::Azure, None),
+        Some("aws") => (TelemetryExporterKind::Aws, None),
         Some("none") | Some("off") | Some("disabled") => (TelemetryExporterKind::None, None),
         None => (TelemetryExporterKind::None, None),
         Some(other) => (
