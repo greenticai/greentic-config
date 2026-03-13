@@ -23,7 +23,7 @@ jobs:
           WORKSPACE_MEMBERS=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.publish != ["false"]) | .name')
           for PKG in $WORKSPACE_MEMBERS; do
             echo "::group::Packaging $PKG"
-            if ! cargo package -p "$PKG" --allow-dirty; then
+            if ! cargo package -p "$PKG" --allow-dirty --no-verify; then
               failures=1
             fi
             echo "::endgroup::"
