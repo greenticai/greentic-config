@@ -1,32 +1,29 @@
 # Security Fix Report
 
-Date: 2026-03-25 (UTC)
-Role: CI Security Reviewer
+Date: 2026-03-27 (UTC)
+Branch: `chore/shared-codex-security-fix`
 
 ## Inputs Reviewed
-- Dependabot alerts: `0`
-- Code scanning alerts: `0`
-- New PR dependency vulnerabilities: `0`
+- Security alerts JSON:
+  - `dependabot`: `[]`
+  - `code_scanning`: `[]`
+- New PR dependency vulnerabilities: `[]`
 
-## PR Dependency Change Check
-I checked repository changes to identify whether this PR introduced dependency-related risk.
+## Repository Security Review Performed
+- Enumerated dependency manifests in repo:
+  - `Cargo.toml`
+  - `Cargo.lock`
+  - `crates/greentic-config/Cargo.toml`
+  - `crates/greentic-config-types/Cargo.toml`
+- Compared PR branch against `origin/main` for dependency-file changes:
+  - `git diff --name-only origin/main...HEAD -- Cargo.toml Cargo.lock crates/greentic-config/Cargo.toml crates/greentic-config-types/Cargo.toml`
+  - Result: no changed dependency files in this PR.
 
-- Changed file in latest commit range (`HEAD~1..HEAD`):
-  - `.github/workflows/publish.yml`
-- No dependency manifest or lockfile changes detected in the PR scope.
-
-Dependency file inventory present in repo (for context):
-- `Cargo.toml`
-- `Cargo.lock`
-- `crates/greentic-config/Cargo.toml`
-- `crates/greentic-config-types/Cargo.toml`
+## Findings
+- No Dependabot alerts to remediate.
+- No code-scanning alerts to remediate.
+- No newly introduced PR dependency vulnerabilities detected.
 
 ## Remediation Actions
-- No remediation required.
-- No security fixes were applied because there are no active alerts and no newly introduced PR dependency vulnerabilities.
-
-## Security Outcome
-- ✅ No Dependabot vulnerabilities to fix.
-- ✅ No code scanning findings to fix.
-- ✅ No new PR dependency vulnerabilities detected.
-- ✅ Repository remains unchanged except for this report file.
+- No code or dependency changes were required.
+- Added this report file to document verification steps and outcome.
