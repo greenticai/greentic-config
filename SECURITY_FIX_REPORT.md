@@ -1,29 +1,27 @@
-# SECURITY_FIX_REPORT
+# Security Fix Report
 
-Date: 2026-03-27 (UTC)
+Date: 2026-03-30 (UTC)  
+Repository: `greenticai/greentic-config`  
+PR Context: `feat/codeql` -> `main` (`pull_request`)
 
-## Inputs Reviewed
-- `security-alerts.json`: `{\"dependabot\": [], \"code_scanning\": []}`
-- `dependabot-alerts.json`: `[]`
-- `code-scanning-alerts.json`: `[]`
-- `pr-vulnerable-changes.json`: `[]`
+## Input Alerts Reviewed
+- Dependabot alerts: `0`
+- Code scanning alerts: `0`
+- New PR dependency vulnerabilities: `0`
 
-## PR Dependency Review
-Dependency manifests/lockfiles present in this repository:
+## Dependency Change Review (PR)
+Checked PR diff against `origin/main` for dependency files:
 - `Cargo.toml`
 - `Cargo.lock`
 - `crates/greentic-config/Cargo.toml`
 - `crates/greentic-config-types/Cargo.toml`
 
-Checks performed:
-- `git diff --name-only origin/main...HEAD -- Cargo.toml Cargo.lock crates/greentic-config/Cargo.toml crates/greentic-config-types/Cargo.toml`
-- Result: no dependency file changes detected in the PR range.
-
-## Findings
-- Dependabot alerts: none.
-- Code scanning alerts: none.
-- New PR dependency vulnerabilities: none.
+Result:
+- No dependency manifest or lockfile changes were introduced by this PR.
+- No new dependency vulnerabilities were identified from the provided PR vulnerability list.
 
 ## Remediation Actions
-- No security fixes were required because no actionable vulnerabilities were identified.
-- No dependency changes were made.
+- No remediation changes were required because there were no reported vulnerabilities and no dependency-risk changes in this PR.
+
+## Files Modified by This Security Review
+- `SECURITY_FIX_REPORT.md`
