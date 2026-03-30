@@ -3,26 +3,27 @@
 Date: 2026-03-27 (UTC)
 
 ## Inputs Reviewed
-- Security alerts JSON (`security-alerts.json`):
-  - `dependabot`: `[]`
-  - `code_scanning`: `[]`
-- New PR dependency vulnerabilities (`pr-vulnerable-changes.json`): `[]`
+- `security-alerts.json`: `{\"dependabot\": [], \"code_scanning\": []}`
+- `dependabot-alerts.json`: `[]`
+- `code-scanning-alerts.json`: `[]`
+- `pr-vulnerable-changes.json`: `[]`
 
 ## PR Dependency Review
-- Checked dependency files in this Rust workspace:
-  - `Cargo.toml`
-  - `Cargo.lock`
-  - `crates/greentic-config/Cargo.toml`
-  - `crates/greentic-config-types/Cargo.toml`
-- Compared PR branch against base for dependency-file changes:
-  - `git diff --name-only origin/main...HEAD -- Cargo.toml Cargo.lock crates/greentic-config/Cargo.toml crates/greentic-config-types/Cargo.toml`
-  - Result: no dependency file changes in this PR.
+Dependency manifests/lockfiles present in this repository:
+- `Cargo.toml`
+- `Cargo.lock`
+- `crates/greentic-config/Cargo.toml`
+- `crates/greentic-config-types/Cargo.toml`
+
+Checks performed:
+- `git diff --name-only origin/main...HEAD -- Cargo.toml Cargo.lock crates/greentic-config/Cargo.toml crates/greentic-config-types/Cargo.toml`
+- Result: no dependency file changes detected in the PR range.
 
 ## Findings
-- No Dependabot alerts.
-- No code scanning alerts.
-- No new PR dependency vulnerabilities.
+- Dependabot alerts: none.
+- Code scanning alerts: none.
+- New PR dependency vulnerabilities: none.
 
-## Remediation
-- No fixes were required because no actionable vulnerabilities were detected.
-- Repository contents were left unchanged except this report update.
+## Remediation Actions
+- No security fixes were required because no actionable vulnerabilities were identified.
+- No dependency changes were made.
