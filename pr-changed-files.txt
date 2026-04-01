@@ -1,1 +1,8 @@
 .github/workflows/dependency-review.yml
+SECURITY_FIX_REPORT.md
+SEMVER_FIX_REPORT.md
+all-code-scanning-alerts.json
+codex-prompt.txt
+crates/greentic-config-types/src/lib.rs
+pr-changed-files.txt
+semver-output.txt

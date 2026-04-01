@@ -1,68 +1,12 @@
-You are operating in a CI environment as a Rust Semver Reviewer.
+You are operating in a CI environment as a Security Reviewer.
 
 Task:
-1) Analyze the cargo-semver-checks violations listed below.
-2) Apply minimal, safe fixes to resolve each violation.
-3) Write SEMVER_FIX_REPORT.md summarizing your actions.
+1) Analyze the security alerts listed below.
+2) Apply minimal, safe fixes to remediate vulnerabilities.
+3) Write SECURITY_FIX_REPORT.md summarizing your actions.
 
-Fix strategies (in order of preference):
-- For "enum variant added on exhaustive enum": add #[non_exhaustive] to the enum.
-- For "constructible struct adds field": add #[non_exhaustive] to the struct.
-- For "enum variant discriminant changed": add explicit discriminant values to preserve the original ordering, OR add #[non_exhaustive].
-- For removed/renamed public items: restore the old item as a deprecated alias if possible.
-- As a last resort: bump the crate version (minor for 0.x crates, major for 1.x+).
-
-Important rules:
-- Do NOT change any logic or behavior — only add attributes or version bumps.
-- Do NOT modify test files unless a test directly asserts on a removed item.
-- Prefer #[non_exhaustive] over version bumps — it is the least disruptive fix.
-- If adding #[non_exhaustive], also ensure existing match arms have a wildcard `_ => {}` catch-all where needed in the same crate.
-
-cargo-semver-checks output:
-[1m[32m    Building[0m greentic-config v0.4.15 (current)
-[1m[32m       Built[0m [  22.895s] (current)
-[1m[32m     Parsing[0m greentic-config v0.4.15 (current)
-[1m[32m      Parsed[0m [   0.017s] (current)
-[1m[32m    Building[0m greentic-config v0.4.15 (baseline)
-[1m[32m       Built[0m [  22.925s] (baseline)
-[1m[32m     Parsing[0m greentic-config v0.4.15 (baseline)
-[1m[32m      Parsed[0m [   0.016s] (baseline)
-[1m[32m    Checking[0m greentic-config v0.4.15 -> v0.4.15 (no change; assume minor)
-[1m[32m     Checked[0m [   0.020s] 196 checks: 196 pass, 56 skip
-[1m[32m     Summary[0m no semver update required
-[1m[32m    Finished[0m [  47.688s] greentic-config
-[1m[32m    Building[0m greentic-config-types v0.4.15 (current)
-[1m[32m       Built[0m [  21.505s] (current)
-[1m[32m     Parsing[0m greentic-config-types v0.4.15 (current)
-[1m[32m      Parsed[0m [   0.012s] (current)
-[1m[32m    Building[0m greentic-config-types v0.4.15 (baseline)
-[1m[32m       Built[0m [  21.864s] (baseline)
-[1m[32m     Parsing[0m greentic-config-types v0.4.15 (baseline)
-[1m[32m      Parsed[0m [   0.012s] (baseline)
-[1m[32m    Checking[0m greentic-config-types v0.4.15 -> v0.4.15 (no change; assume minor)
-[1m[31m     Checked[0m [   0.027s] 196 checks: 194 pass, 2 fail, 0 warn, 56 skip
-
---- failure enum_no_repr_variant_discriminant_changed: enum variant had its discriminant change value ---
-
-[1mDescription:[0m
-The enum's variant had its discriminant value change. This breaks downstream code that used its value via a numeric cast like `as isize`.
-        ref: https://doc.rust-lang.org/reference/items/enumerations.html#assigning-discriminant-values
-       impl: https://github.com/obi1kenobi/cargo-semver-checks/tree/v0.47.0/src/lints/enum_no_repr_variant_discriminant_changed.ron
-
-[1mFailed in:[0m
-  variant TelemetryExporterKind::None 2 -> 5 in /home/runner/work/greentic-config/greentic-config/crates/greentic-config-types/src/lib.rs:357
-
---- failure enum_variant_added: enum variant added on exhaustive enum ---
-
-[1mDescription:[0m
-A publicly-visible enum without #[non_exhaustive] has a new variant.
-        ref: https://doc.rust-lang.org/cargo/reference/semver.html#enum-variant-new
-       impl: https://github.com/obi1kenobi/cargo-semver-checks/tree/v0.47.0/src/lints/enum_variant_added.ron
-
-[1mFailed in:[0m
-  variant TelemetryExporterKind:Gcp in /home/runner/work/greentic-config/greentic-config/crates/greentic-config-types/src/lib.rs:353
-  variant TelemetryExporterKind:Azure in /home/runner/work/greentic-config/greentic-config/crates/greentic-config-types/src/lib.rs:354
-  variant TelemetryExporterKind:Aws in /home/runner/work/greentic-config/greentic-config/crates/greentic-config-types/src/lib.rs:355
-
-[1m[31m     Summary[0m semver requires new major version: 2 major and 0 minor checks failed
-[1m[32m    Finished[0m [  44.649s] greentic-config-types
+Security alerts JSON:
+{
+  "dependabot": [],
+  "code_scanning": []
+}
