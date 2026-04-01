@@ -1,8 +1,8 @@
 # Security Fix Report
 
-Date: 2026-03-30 (UTC)  
+Date: 2026-04-01 (UTC)  
 Repository: `greenticai/greentic-config`  
-PR Context: `feat/codeql` -> `main` (`pull_request`)
+PR Context: `ci/enable-semver-checks` (`pull_request`)
 
 ## Input Alerts Reviewed
 - Dependabot alerts: `0`
@@ -10,7 +10,11 @@ PR Context: `feat/codeql` -> `main` (`pull_request`)
 - New PR dependency vulnerabilities: `0`
 
 ## Dependency Change Review (PR)
-Checked PR diff against `origin/main` for dependency files:
+Reviewed changed files listed in `pr-changed-files.txt`:
+- `.github/workflows/ci.yml`
+- `.github/workflows/codex-semver-fix.yml`
+
+Dependency-sensitive files checked:
 - `Cargo.toml`
 - `Cargo.lock`
 - `crates/greentic-config/Cargo.toml`
@@ -18,10 +22,10 @@ Checked PR diff against `origin/main` for dependency files:
 
 Result:
 - No dependency manifest or lockfile changes were introduced by this PR.
-- No new dependency vulnerabilities were identified from the provided PR vulnerability list.
+- No new dependency vulnerabilities were identified from the provided PR vulnerability list (`[]`).
 
 ## Remediation Actions
-- No remediation changes were required because there were no reported vulnerabilities and no dependency-risk changes in this PR.
+- No code or dependency remediation was required because there were no active alerts and no vulnerable dependency changes in this PR.
 
 ## Files Modified by This Security Review
 - `SECURITY_FIX_REPORT.md`
