@@ -9,6 +9,11 @@ Security alerts JSON provided in CI:
 - `dependabot`: `[]`
 - `code_scanning`: `[]`
 
+Additional local alert artifacts reviewed:
+- `security-alerts.json`
+- `dependabot-alerts.json`
+- `code-scanning-alerts.json`
+
 ## Analysis
 - Dependabot alerts detected: `0`
 - Code scanning alerts detected: `0`
