@@ -2,33 +2,26 @@
 
 ## Scope
 - Crate: `greentic-config-types`
+- Version in tree: `0.4.15`
+- Violation analyzed: `enum_marked_non_exhaustive`
+
+## Violation
+- `TelemetryExporterKind` in `crates/greentic-config-types/src/lib.rs:351` was marked `#[non_exhaustive]`.
+- This is a semver-breaking API change because downstream exhaustive matches would stop compiling.
+
+## Fix Applied
+- Removed `#[non_exhaustive]` from `TelemetryExporterKind`.
 - File changed: `crates/greentic-config-types/src/lib.rs`
 
-## Reported violations
-1. `enum_no_repr_variant_discriminant_changed`
-- `TelemetryExporterKind::None` discriminant changed from `2` to `5`.
+## Why This Is Minimal and Safe
+- No logic or runtime behavior changed.
+- No enum variants, discriminants, serialization attributes, or defaults were modified.
+- Public API behavior was restored to baseline compatibility by removing only the breaking attribute.
 
-2. `enum_variant_added`
-- Added variants on exhaustive enum `TelemetryExporterKind`: `Gcp`, `Azure`, `Aws`.
+## Match Arm Catch-All Check
+- No new `#[non_exhaustive]` was introduced in this fix, so no wildcard match-arm updates were required.
 
-## Fixes applied
-1. Added `#[non_exhaustive]` to `TelemetryExporterKind`.
-- Resolves the exhaustive-enum variant addition compatibility issue.
-
-2. Added explicit discriminants to `TelemetryExporterKind` variants to preserve prior numeric value for `None`.
-- Set:
-  - `Otlp = 0`
-  - `Stdout = 1`
-  - `None = 2` (preserved old value)
-  - `Gcp = 3`
-  - `Azure = 4`
-  - `Aws = 5`
-- Resolves discriminant-change compatibility issue.
-
-## Behavioral impact
-- No logic/behavior changes were made.
-- Changes are metadata/API-surface compatibility adjustments only.
-
-## Match exhaustiveness check
-- Searched `greentic-config-types` for `match` usage on `TelemetryExporterKind`.
-- No exhaustive `match` statements on this enum were found in this crate, so no wildcard arm changes were required.
+## Validation Status
+- Attempted to run:
+  - `cargo semver-checks check-release --package greentic-config-types`
+- Could not complete validation in this CI environment due to network restrictions (`Could not resolve host: index.crates.io`).

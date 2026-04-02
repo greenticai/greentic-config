@@ -1,3 +1,5 @@
+# DISABLED: greentic-config has no published crates — semver-checks not applicable.
+# Keep file for reference; re-enable if crates are published in the future.
 name: Codex Semver Fix
 on:
   pull_request:
@@ -11,8 +13,14 @@ on:
 permissions:
   contents: write
   pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   semver-fix:
+    if: false
     uses: greenticai/.github/.github/workflows/codex-semver-fix.yml@main
     with:
       branch: ${{ github.event.inputs.branch || '' }}

@@ -347,7 +347,6 @@ fn default_sampling() -> f32 {
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
-#[non_exhaustive]
 pub enum TelemetryExporterKind {
     Otlp = 0,
     Stdout = 1,
