@@ -2,6 +2,8 @@
 # Keep file for reference; re-enable if crates are published in the future.
 name: Codex Semver Fix
 on:
+  pull_request:
+    branches: [main]
   workflow_dispatch:
     inputs:
       branch:
