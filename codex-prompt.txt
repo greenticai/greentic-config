@@ -1,56 +1,12 @@
-You are operating in a CI environment as a Rust Semver Reviewer.
+You are operating in a CI environment as a Security Reviewer.
 
 Task:
-1) Analyze the cargo-semver-checks violations listed below.
-2) Apply minimal, safe fixes to resolve each violation.
-3) Write SEMVER_FIX_REPORT.md summarizing your actions.
+1) Analyze the security alerts listed below.
+2) Apply minimal, safe fixes to remediate vulnerabilities.
+3) Write SECURITY_FIX_REPORT.md summarizing your actions.
 
-Fix strategies (in order of preference):
-- For "enum variant added on exhaustive enum": add #[non_exhaustive] to the enum.
-- For "constructible struct adds field": add #[non_exhaustive] to the struct.
-- For "enum variant discriminant changed": add explicit discriminant values to preserve the original ordering, OR add #[non_exhaustive].
-- For removed/renamed public items: restore the old item as a deprecated alias if possible.
-- As a last resort: bump the crate version (minor for 0.x crates, major for 1.x+).
-
-Important rules:
-- Do NOT change any logic or behavior — only add attributes or version bumps.
-- Do NOT modify test files unless a test directly asserts on a removed item.
-- Prefer #[non_exhaustive] over version bumps — it is the least disruptive fix.
-- If adding #[non_exhaustive], also ensure existing match arms have a wildcard `_ => {}` catch-all where needed in the same crate.
-
-cargo-semver-checks output:
-[1m[32m    Building[0m greentic-config v0.4.15 (current)
-[1m[32m       Built[0m [  20.629s] (current)
-[1m[32m     Parsing[0m greentic-config v0.4.15 (current)
-[1m[32m      Parsed[0m [   0.018s] (current)
-[1m[32m    Building[0m greentic-config v0.4.15 (baseline)
-[1m[32m       Built[0m [  20.740s] (baseline)
-[1m[32m     Parsing[0m greentic-config v0.4.15 (baseline)
-[1m[32m      Parsed[0m [   0.017s] (baseline)
-[1m[32m    Checking[0m greentic-config v0.4.15 -> v0.4.15 (no change; assume minor)
-[1m[32m     Checked[0m [   0.019s] 196 checks: 196 pass, 56 skip
-[1m[32m     Summary[0m no semver update required
-[1m[32m    Finished[0m [  42.590s] greentic-config
-[1m[32m    Building[0m greentic-config-types v0.4.15 (current)
-[1m[32m       Built[0m [  19.903s] (current)
-[1m[32m     Parsing[0m greentic-config-types v0.4.15 (current)
-[1m[32m      Parsed[0m [   0.011s] (current)
-[1m[32m    Building[0m greentic-config-types v0.4.15 (baseline)
-[1m[32m       Built[0m [  19.639s] (baseline)
-[1m[32m     Parsing[0m greentic-config-types v0.4.15 (baseline)
-[1m[32m      Parsed[0m [   0.011s] (baseline)
-[1m[32m    Checking[0m greentic-config-types v0.4.15 -> v0.4.15 (no change; assume minor)
-[1m[31m     Checked[0m [   0.022s] 196 checks: 195 pass, 1 fail, 0 warn, 56 skip
-
---- failure enum_marked_non_exhaustive: enum marked #[non_exhaustive] ---
-
-[1mDescription:[0m
-A public enum has been marked #[non_exhaustive]. Pattern-matching on it outside of its crate must now include a wildcard pattern like `_`, or it will fail to compile.
-        ref: https://doc.rust-lang.org/cargo/reference/semver.html#attr-adding-non-exhaustive
-       impl: https://github.com/obi1kenobi/cargo-semver-checks/tree/v0.47.0/src/lints/enum_marked_non_exhaustive.ron
-
-[1mFailed in:[0m
-  enum TelemetryExporterKind in /home/runner/work/greentic-config/greentic-config/crates/greentic-config-types/src/lib.rs:351
-
-[1m[31m     Summary[0m semver requires new major version: 1 major and 0 minor checks failed
-[1m[32m    Finished[0m [  40.693s] greentic-config-types
+Security alerts JSON:
+{
+  "dependabot": [],
+  "code_scanning": []
+}
