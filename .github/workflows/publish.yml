@@ -14,26 +14,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build-test:
-    permissions:
-      contents: read
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Lint & Test
-        env:
-          RUST_BACKTRACE: 1
-        run: |
-          cargo fmt --all -- --check
-          cargo clippy --workspace --all-targets --all-features -- -D warnings
-          cargo build --workspace --all-features --locked
-          cargo test --workspace --all-features --locked -- --nocapture
+  ci:
+    uses: ./.github/workflows/ci.yml
 
   publish:
     if: github.event_name == 'push'
-    needs: build-test
+    needs: ci
     runs-on: ubuntu-latest
     permissions:
       contents: read
