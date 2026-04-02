@@ -1,5 +1,2 @@
 .github/workflows/ci.yml
-.github/workflows/coverage.yml
-SECURITY_FIX_REPORT.md
-all-code-scanning-alerts.json
-pr-changed-files.txt
+.github/workflows/publish.yml
