@@ -16,7 +16,7 @@ serde_json = { workspace = true }
 toml = { workspace = true }
 greentic-types = { workspace = true }
 url = { workspace = true }
-schemars = { version = "0.8", optional = true, features = ["url"] }
+schemars = { workspace = true, optional = true, features = ["url2"] }
 
 [dev-dependencies]
 serde_json = { workspace = true }
