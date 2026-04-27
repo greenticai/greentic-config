@@ -18,18 +18,5 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.94.0
       - uses: Swatinem/rust-cache@v2
 
-      - name: Install jq
-        run: sudo apt-get update && sudo apt-get install -y jq
-
       - name: Package all publishable crates (dry-run)
-        run: |
-          failures=0
-          WORKSPACE_MEMBERS=$(cargo metadata --format-version 1 --no-deps | jq -r '.packages[] | select(.publish != ["false"]) | .name')
-          for PKG in $WORKSPACE_MEMBERS; do
-            echo "::group::Packaging $PKG"
-            if ! cargo package -p "$PKG" --allow-dirty --no-verify; then
-              failures=1
-            fi
-            echo "::endgroup::"
-          done
-          exit $failures
+        run: cargo package --workspace --allow-dirty --no-verify
