@@ -436,7 +436,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-config"
-version = "0.6.0-dev.0"
+version = "1.1.0-dev.0"
 dependencies = [
  "anyhow",
  "camino",
@@ -456,7 +456,7 @@ dependencies = [
 
 [[package]]
 name = "greentic-config-types"
-version = "0.6.0-dev.0"
+version = "1.1.0-dev.0"
 dependencies = [
  "greentic-types",
  "schemars 1.2.1",
@@ -468,9 +468,9 @@ dependencies = [
 
 [[package]]
 name = "greentic-types"
-version = "0.5.2"
+version = "1.1.0-dev.25376259391"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27d3246d833a9d0c3c44694c9381df09df6361754f9590e922bfad0829a6d789"
+checksum = "20f2d79fd4554b6985d5fd529c88884dec49985c14846bf10b43c9a58ee16e1e"
 dependencies = [
  "anyhow",
  "blake3",
