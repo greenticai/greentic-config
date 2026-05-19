@@ -643,6 +643,24 @@ mod tests {
     }
 
     #[test]
+    fn default_env_id_falls_through_to_local() {
+        // A4b flip: the default layer should now seed `env_id = "local"`
+        // when nothing else is set. Downstream `dev` overrides are caught
+        // by the compat alias in greentic-setup/greentic-start (PR2).
+        let tmp = tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let default_paths = DefaultPaths::from_root(&root);
+
+        let merged = merge::MergeState::new(
+            loaders::default_layer(&root, &default_paths),
+            ConfigSource::Default,
+        );
+        let (resolved, _, _) = merged.finalize(&default_paths).unwrap();
+        let env_id_str = serde_json::to_string(&resolved.environment.env_id).unwrap();
+        assert_eq!(env_id_str, "\"local\"", "default env_id should be `local`");
+    }
+
+    #[test]
     fn relative_paths_resolve_to_absolute() {
         let tmp = tempdir().unwrap();
         let root = tmp.path().to_path_buf();

@@ -1340,6 +1340,13 @@ fn parse_u16_warn(value: &str, key: &str, warnings: &mut Vec<String>) -> Option<
     }
 }
 
+/// Canonical default `EnvId` when nothing is set by the loader chain
+/// (CLI → env → project → defaults). Flipped from `"dev"` to `"local"` as
+/// part of A4b — the `local` env is what `gtc setup` and `gtc start`
+/// auto-create per A4. Downstream consumers that still pass `dev` via
+/// `--env` or `$GREENTIC_ENV` are caught by the `dev` → `local` compat
+/// alias in `greentic-setup` / `greentic-start` (A4b PR2) with a
+/// once-per-process warning.
 pub(crate) fn default_env_id() -> EnvId {
-    serde_json::from_str("\"dev\"").expect("EnvId should deserialize from string")
+    serde_json::from_str("\"local\"").expect("EnvId should deserialize from string")
 }
