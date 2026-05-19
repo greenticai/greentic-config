@@ -175,8 +175,16 @@ pub fn validate_config_with_overrides(
     Ok(warnings)
 }
 
+/// Classifies an [`EnvId`] as a "dev-ish" environment for the purposes of
+/// the `[dev]`-section gate in `validate_config`. A4b widens this from
+/// `contains("dev")` only to also accept `local` (the new default
+/// environment id from A4 — `gtc setup` / `gtc start` auto-create
+/// `~/.greentic/environments/local/`). Both substrings are checked
+/// case-insensitively so values like `dev-staging` or `team-local`
+/// continue to gate the `[dev]` section in.
 fn is_dev_env(env: &EnvId) -> bool {
-    env_id_label(env).to_ascii_lowercase().contains("dev")
+    let label = env_id_label(env).to_ascii_lowercase();
+    label.contains("dev") || label.contains("local")
 }
 
 fn env_id_label(env: &EnvId) -> String {
@@ -368,4 +376,40 @@ fn host_like(value: &str) -> bool {
         .map(|_| true)
         .or_else(|_| url::Host::parse(value).map(|_| true))
         .unwrap_or(false)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn env_id(s: &str) -> EnvId {
+        serde_json::from_str(&format!("\"{s}\"")).expect("env id")
+    }
+
+    #[test]
+    fn is_dev_env_matches_legacy_dev() {
+        assert!(is_dev_env(&env_id("dev")));
+        assert!(is_dev_env(&env_id("DEV")));
+        assert!(is_dev_env(&env_id("dev-staging")));
+        assert!(is_dev_env(&env_id("team-dev")));
+    }
+
+    #[test]
+    fn is_dev_env_matches_a4b_local() {
+        // A4b widening: `local` is the new canonical default env id and
+        // must pass the `[dev]`-section gate so `gtc setup` / `gtc start`
+        // can load configs that carry a `[dev]` block without `allow_dev`.
+        assert!(is_dev_env(&env_id("local")));
+        assert!(is_dev_env(&env_id("LOCAL")));
+        assert!(is_dev_env(&env_id("local-laptop")));
+        assert!(is_dev_env(&env_id("team-local")));
+    }
+
+    #[test]
+    fn is_dev_env_rejects_prod_and_staging() {
+        assert!(!is_dev_env(&env_id("prod")));
+        assert!(!is_dev_env(&env_id("staging")));
+        assert!(!is_dev_env(&env_id("production")));
+        assert!(!is_dev_env(&env_id("eu-west-1")));
+    }
 }
